@@ -1,0 +1,4020 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comp Finder & ARV Estimator</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  if (window['pdfjsLib']) {
+    window['pdfjsLib'].GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+</script>
+
+<style>
+  /* ---------- Tokens ---------- */
+  :root{
+    --bg:#111827;
+    --bg-grad: radial-gradient(ellipse at 50% 0%, #1B2942 0%, #131B2E 55%, #0C1220 100%);
+    --surface:#1A2236;
+    --surface-2:#252F49;
+    --surface-3:#16203A;
+    --border:#2D3958;
+    --border-soft:#222C46;
+    --text:#F0F3FB;
+    --text-dim:#B8C0D6;
+    --text-muted:#828DAB;
+    --gold:#F5C76A;
+    --gold-glow:rgba(245,199,106,0.35);
+    --gold-soft:rgba(245,199,106,0.14);
+    --green:#67D49A;
+    --yellow:#F0C674;
+    --red:#E37B7B;
+    --shadow-deep: 0 24px 64px -12px rgba(0,0,0,0.55);
+    --radius:10px;
+    --radius-sm:6px;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  [hidden]{ display:none !important }
+  html,body{height:100%;width:100%;overflow:hidden}
+  body{
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    line-height:1.5;
+    font-feature-settings: 'cv11','ss01','ss03';
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  input,select{font-family:inherit;color:inherit}
+  .mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
+
+  /* ---------- HERO ---------- */
+  #hero{
+    position:fixed;inset:0;
+    background:var(--bg-grad);
+    z-index:10;
+    transition:opacity 1.2s cubic-bezier(.4,0,.2,1);
+  }
+  #hero.fading{opacity:0;pointer-events:none}
+  #globe-canvas{
+    position:absolute;inset:0;
+    width:100%;height:100%;
+    display:block;
+  }
+  .hero-content{
+    position:relative;z-index:2;
+    height:100%;
+    display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+    padding:48px 24px;
+    pointer-events:none;
+  }
+  .hero-content > * { pointer-events:auto }
+  .brand{
+    display:flex;align-items:center;gap:10px;
+    font-size:11px;font-weight:600;
+    letter-spacing:0.18em;
+    color:var(--text-dim);
+    text-transform:uppercase;
+  }
+  .brand-mark{
+    color:var(--gold);
+    width:16px;height:16px;
+    display:inline-flex;align-items:center;justify-content:center;
+    filter:drop-shadow(0 0 6px var(--gold-glow));
+  }
+  .brand-mark svg{ width:100%;height:100% }
+  .hero-content .brand{
+    position:absolute;top:40px;left:48px;
+  }
+  .hero-settings-top{
+    position:absolute;top:36px;right:48px;
+    display:flex;gap:8px;align-items:center;
+    font-size:12px;color:var(--text-dim);
+  }
+  .hero-settings-top button{
+    padding:8px 14px;
+    border:1px solid var(--border);
+    border-radius:var(--radius-sm);
+    color:var(--text-dim);
+    background:rgba(19,26,43,0.6);
+    backdrop-filter: blur(8px);
+    transition:all .2s;
+    font-size:12px;
+  }
+  .hero-settings-top button:hover{
+    border-color:var(--gold);color:var(--gold);
+  }
+
+  .hero-headline{
+    font-size:clamp(40px, 6.2vw, 76px);
+    font-weight:300;
+    line-height:1.05;
+    letter-spacing:-0.025em;
+    text-align:center;
+    margin-bottom:18px;
+    max-width:880px;
+    color:#F2F5FB;
+  }
+  .hero-headline strong{
+    font-weight:600;
+    color:var(--gold);
+    text-shadow:0 0 32px var(--gold-glow), 0 0 60px rgba(245,199,106,0.18);
+  }
+  .hero-sub{
+    font-size:17px;
+    color:#C8D1E2;
+    max-width:560px;
+    text-align:center;
+    margin-bottom:40px;
+    line-height:1.55;
+  }
+  .address-search{
+    position:relative;
+    width:min(640px, 90vw);
+    animation:input-glow 3s ease-in-out infinite;
+  }
+  @keyframes input-glow{
+    0%, 100%{ box-shadow:0 0 0 0 rgba(245,199,106,0) }
+    50%{ box-shadow:0 0 0 6px rgba(245,199,106,0.08) }
+  }
+  .address-search input{
+    width:100%;
+    padding:22px 64px 22px 26px;
+    background:rgba(19,26,43,0.85);
+    backdrop-filter: blur(14px);
+    border:1px solid rgba(245,199,106,0.25);
+    border-radius:14px;
+    color:var(--text);
+    font-size:17px;
+    font-weight:400;
+    letter-spacing:-0.01em;
+    transition:all .25s;
+    outline:none;
+    box-shadow: 0 16px 48px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+  .address-search input::placeholder{ color:#7E8AA6 }
+  .address-search input:focus{
+    border-color:var(--gold);
+    background:rgba(25,33,54,0.92);
+    box-shadow: 0 0 0 4px var(--gold-soft), 0 16px 48px -12px rgba(0,0,0,0.5);
+  }
+  .address-search .enter-hint{
+    position:absolute;
+    right:20px;top:50%;transform:translateY(-50%);
+    font-size:11px;
+    color:var(--text-dim);
+    pointer-events:none;
+    padding:5px 9px;
+    border:1px solid var(--border);
+    background:var(--surface-3);
+    border-radius:5px;
+    letter-spacing:0.04em;
+  }
+
+  /* OR divider + PDF entry */
+  .hero-or{
+    display:flex;align-items:center;gap:14px;
+    width:min(640px, 90vw);
+    margin:22px 0;
+    color:var(--text-muted);
+    font-size:11px;
+    letter-spacing:0.14em;
+  }
+  .hero-or::before,
+  .hero-or::after{
+    content:'';
+    flex:1;
+    height:1px;
+    background:linear-gradient(to right, transparent, var(--border-soft), transparent);
+  }
+  .hero-pdf{
+    width:min(640px, 90vw);
+    padding:18px 24px;
+    background:rgba(19,26,43,0.6);
+    backdrop-filter: blur(10px);
+    border:1px dashed var(--border);
+    border-radius:12px;
+    color:var(--text-dim);
+    font-size:14px;
+    text-align:center;
+    cursor:pointer;
+    transition:all .2s;
+    display:flex;align-items:center;justify-content:center;gap:10px;
+  }
+  .hero-pdf:hover,
+  .hero-pdf.drag{
+    border-color:var(--gold);
+    background:rgba(245,199,106,0.05);
+    color:var(--text);
+  }
+  .hero-pdf-icon{
+    font-size:18px;
+    color:var(--gold);
+  }
+  .hero-pdf strong{ color:var(--text);font-weight:600 }
+
+  /* Hero example chips */
+  .hero-examples{
+    margin-top:20px;
+    display:flex;gap:8px;justify-content:center;flex-wrap:wrap;
+    font-size:12px;
+  }
+  .hero-example{
+    padding:6px 12px;
+    background:rgba(19,26,43,0.5);
+    border:1px solid var(--border-soft);
+    border-radius:999px;
+    color:var(--text-muted);
+    cursor:pointer;
+    transition:all .15s;
+  }
+  .hero-example:hover{
+    color:var(--gold);
+    border-color:var(--gold);
+    background:rgba(245,199,106,0.05);
+  }
+  .hero-example-label{
+    color:var(--text-muted);
+    font-size:11px;
+    margin-right:4px;
+    align-self:center;
+  }
+
+  .hero-demo-btn{
+    margin-top:14px;
+    padding:10px 18px;
+    background:rgba(245,199,106,0.08);
+    border:1px solid rgba(245,199,106,0.3);
+    border-radius:8px;
+    color:var(--gold);
+    font-size:12px;
+    font-weight:500;
+    letter-spacing:0.04em;
+    cursor:pointer;
+    transition:all .2s;
+  }
+  .hero-demo-btn:hover{
+    background:rgba(245,199,106,0.14);
+    border-color:var(--gold);
+    box-shadow:0 0 24px -8px var(--gold-glow);
+  }
+  .address-search.searching .enter-hint{ display:none }
+  .address-search .search-spinner{
+    position:absolute;right:18px;top:50%;transform:translateY(-50%);
+    width:18px;height:18px;
+    border:2px solid var(--border);
+    border-top-color:var(--gold);
+    border-radius:50%;
+    animation:spin .8s linear infinite;
+    display:none;
+  }
+  .address-search.searching .search-spinner{ display:block }
+
+  .hero-foot{
+    position:absolute;
+    bottom:40px;left:0;right:0;
+    text-align:center;
+    font-size:11px;
+    color:var(--text-muted);
+    letter-spacing:0.06em;
+  }
+  .hero-foot .usage-dot{
+    display:inline-block;width:6px;height:6px;
+    background:var(--gold);border-radius:50%;
+    margin-right:6px;
+    box-shadow:0 0 8px var(--gold-glow);
+    vertical-align:middle;
+  }
+
+  /* ---------- APP ---------- */
+  #app{
+    position:fixed;inset:0;
+    display:flex;flex-direction:column;
+    background:var(--bg);
+    opacity:0;
+    transition:opacity 1s ease .4s;
+  }
+  #app.visible{opacity:1}
+
+  .app-header{
+    height:56px;
+    flex-shrink:0;
+    border-bottom:1px solid var(--border-soft);
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 20px 0 24px;
+    background:var(--surface-3);
+    z-index:50;
+  }
+  .header-right{ display:flex;align-items:center;gap:12px }
+  .header-right .usage-pill{
+    display:inline-flex;align-items:center;gap:6px;
+    font-size:11px;
+    color:var(--text-dim);
+    padding:6px 12px;
+    background:var(--surface);
+    border:1px solid var(--border-soft);
+    border-radius:999px;
+    letter-spacing:0.04em;
+  }
+  .usage-pill::before{
+    content:'';
+    width:6px;height:6px;
+    background:var(--gold);
+    border-radius:50%;
+    box-shadow:0 0 6px var(--gold-glow);
+  }
+  .usage-pill.warn::before{ background:var(--yellow);box-shadow:0 0 6px rgba(240,198,116,0.4) }
+  .usage-pill.limit::before{ background:var(--red);box-shadow:0 0 6px rgba(227,123,123,0.4) }
+
+  .icon-btn{
+    width:34px;height:34px;
+    display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--border-soft);
+    border-radius:8px;
+    color:var(--text-dim);
+    transition:all .15s;
+  }
+  .icon-btn:hover{ border-color:var(--border);color:var(--text);background:var(--surface) }
+
+  .app-body{
+    flex:1;
+    display:flex;
+    overflow:hidden;
+  }
+  .map-pane{
+    flex:0 0 60%;
+    position:relative;
+    background:#111827;
+    transition:flex-basis .35s ease;
+  }
+  #map{ height:100%;width:100%;background:#111827 }
+  .leaflet-container{ background:#111827 !important;font-family:inherit }
+  .leaflet-control-attribution{
+    background:rgba(10,15,28,0.8) !important;
+    color:var(--text-muted) !important;
+    font-size:10px !important;
+  }
+  .leaflet-control-attribution a{ color:var(--text-dim) !important }
+  .leaflet-control-zoom a{
+    background:rgba(19,26,43,0.95) !important;
+    border:1px solid var(--border-soft) !important;
+    color:var(--text-dim) !important;
+  }
+  .leaflet-control-zoom a:hover{
+    background:var(--surface-2) !important;
+    color:var(--gold) !important;
+  }
+  .leaflet-popup-content-wrapper{
+    background:var(--surface-2);
+    color:var(--text);
+    border:1px solid var(--border);
+    border-radius:8px;
+    box-shadow:var(--shadow-deep);
+  }
+  .leaflet-popup-tip{ background:var(--surface-2) }
+  .leaflet-popup-content{ margin:14px 16px;font-size:13px;line-height:1.55 }
+  .leaflet-popup-close-button{ color:var(--text-muted) !important }
+  .popup-svthumb{
+    display:block;
+    width:calc(100% + 32px);
+    margin:-14px -16px 10px;
+    height:140px;
+    object-fit:cover;
+    background:var(--surface-3);
+    border-bottom:1px solid var(--border-soft);
+  }
+
+  .map-legend{
+    position:absolute;
+    bottom:18px;left:18px;
+    background:rgba(19,26,43,0.92);
+    backdrop-filter:blur(8px);
+    border:1px solid var(--border-soft);
+    border-radius:8px;
+    padding:10px 14px;
+    font-size:11px;
+    color:var(--text-dim);
+    z-index:400;
+    display:flex;flex-direction:column;gap:8px;
+  }
+  .map-legend .legend-row{ display:flex;align-items:center;gap:8px }
+  .legend-grad{
+    height:6px;width:140px;border-radius:3px;
+    background:linear-gradient(90deg,#E37B7B 0%,#F0C674 50%,#67D49A 100%);
+  }
+  .legend-subj-dot{
+    width:10px;height:10px;border-radius:50%;
+    background:var(--gold);
+    box-shadow:0 0 8px var(--gold-glow);
+  }
+
+  .subj-marker{
+    width:22px;height:22px;
+    border-radius:50%;
+    background:var(--gold);
+    border:3px solid #0A0F1C;
+    box-shadow:0 0 0 2px var(--gold), 0 0 24px var(--gold-glow);
+  }
+  .comp-marker{
+    width:14px;height:14px;
+    border-radius:50%;
+    border:2px solid #0A0F1C;
+    box-shadow:0 0 0 1px rgba(255,255,255,0.15);
+    cursor:pointer;
+    transition:transform .15s;
+  }
+  .comp-marker:hover{ transform:scale(1.25) }
+  .comp-marker.excluded{ opacity:0.35 }
+  .comp-marker.subject-hover{ box-shadow:0 0 0 3px var(--gold), 0 0 16px var(--gold-glow) }
+
+  /* ---------- RESULTS PANE ---------- */
+  .results-pane{
+    flex:0 0 40%;
+    min-height:0;
+    height:100%;
+    overflow-y:auto;
+    overflow-x:hidden;
+    overscroll-behavior:contain;
+    padding:24px;
+    background:var(--bg);
+    border-left:1px solid var(--border-soft);
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+  }
+  /* Force children not to shrink — they need to be their natural size so overflow triggers */
+  .results-pane > *{ flex-shrink:0 }
+  .results-pane::-webkit-scrollbar{ width:8px }
+  .results-pane::-webkit-scrollbar-track{ background:transparent }
+  .results-pane::-webkit-scrollbar-thumb{ background:var(--border);border-radius:4px }
+
+  .results-section{
+    background:var(--surface);
+    border:1px solid var(--border-soft);
+    border-radius:var(--radius);
+    overflow:hidden;
+  }
+  .section-head{
+    padding:14px 18px;
+    display:flex;align-items:center;justify-content:space-between;
+    border-bottom:1px solid var(--border-soft);
+  }
+  .section-head.no-border{ border-bottom:none }
+  .section-head h2{
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--text-dim);
+  }
+  .collapse-btn{
+    width:24px;height:24px;
+    display:flex;align-items:center;justify-content:center;
+    color:var(--text-muted);
+    border-radius:4px;
+    font-size:16px;
+    transition:all .15s;
+  }
+  .collapse-btn:hover{ background:var(--surface-2);color:var(--text) }
+
+  /* Subject form */
+  .subject-body{
+    padding:18px;
+    display:flex;flex-direction:column;gap:14px;
+  }
+  .form-field{ display:flex;flex-direction:column;gap:6px }
+  .form-field label{
+    font-size:11px;
+    color:var(--text-muted);
+    letter-spacing:0.04em;
+    font-weight:500;
+  }
+  .form-field input,
+  .form-field select{
+    padding:9px 12px;
+    background:var(--surface-3);
+    border:1px solid var(--border-soft);
+    border-radius:var(--radius-sm);
+    font-size:13px;
+    transition:all .15s;
+    width:100%;
+  }
+  .form-field input:focus,
+  .form-field select:focus{
+    outline:none;
+    border-color:var(--gold);
+    box-shadow:0 0 0 3px var(--gold-soft);
+  }
+  .form-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr 1fr;
+    gap:12px;
+  }
+  .form-grid-2{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+  }
+  .addr-row{
+    display:flex;gap:8px;
+  }
+  .addr-row input{ flex:1 }
+  .addr-row .ghost-btn{ flex-shrink:0 }
+  .ghost-btn.small{
+    padding:6px 12px;
+    font-size:11px;
+  }
+  .checkbox-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px 12px;
+    margin-top:4px;
+  }
+  .check{
+    display:flex;align-items:center;gap:8px;
+    font-size:13px;
+    cursor:pointer;
+    color:var(--text-dim);
+    user-select:none;
+  }
+  .check input{
+    appearance:none;
+    width:18px;height:18px;
+    border:1.5px solid #4A5A7E;
+    border-radius:4px;
+    background:#0D1424;
+    position:relative;
+    cursor:pointer;
+    flex-shrink:0;
+    transition:all .15s;
+  }
+  .check input:hover{ border-color:var(--gold) }
+  .check input:checked{
+    background:var(--gold);
+    border-color:var(--gold);
+  }
+  .check input:checked::after{
+    content:'';
+    position:absolute;
+    left:5px;top:1px;
+    width:5px;height:10px;
+    border:solid #0A0F1C;
+    border-width:0 2px 2px 0;
+    transform:rotate(45deg);
+  }
+  .check:hover{ color:var(--text) }
+
+  /* Buttons */
+  .primary-btn{
+    background:var(--gold);
+    color:#0A0F1C;
+    padding:13px 24px;
+    border-radius:var(--radius-sm);
+    font-size:13px;
+    font-weight:600;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+    width:100%;
+    margin:6px 18px 18px;
+    width:calc(100% - 36px);
+    transition:all .2s;
+    box-shadow:0 0 0 0 var(--gold-glow);
+  }
+  .primary-btn:hover{
+    box-shadow:0 0 0 4px var(--gold-soft), 0 8px 24px -8px var(--gold-glow);
+    transform:translateY(-1px);
+  }
+  .primary-btn:disabled{
+    opacity:0.4;cursor:not-allowed;
+    transform:none;box-shadow:none;
+  }
+  .ghost-btn{
+    background:transparent;
+    color:var(--text-dim);
+    padding:8px 14px;
+    border:1px solid var(--border);
+    border-radius:var(--radius-sm);
+    font-size:12px;
+    transition:all .15s;
+  }
+  .ghost-btn:hover{ color:var(--text);border-color:var(--gold) }
+
+  /* ARV card */
+  .arv-card{
+    padding:24px;
+    background:linear-gradient(135deg, rgba(245,199,106,0.04) 0%, rgba(245,199,106,0) 60%);
+    position:relative;
+    overflow:hidden;
+  }
+  .arv-card::before{
+    content:'';
+    position:absolute;
+    top:-100px;right:-100px;
+    width:300px;height:300px;
+    background:radial-gradient(circle, var(--gold-soft) 0%, transparent 70%);
+    pointer-events:none;
+  }
+  .arv-label{
+    font-size:10px;
+    color:var(--text-muted);
+    letter-spacing:0.2em;
+    text-transform:uppercase;
+    margin-bottom:8px;
+    position:relative;
+  }
+  .arv-main{
+    font-size:48px;
+    font-weight:700;
+    color:var(--gold);
+    letter-spacing:-0.03em;
+    line-height:1;
+    margin-bottom:6px;
+    text-shadow:0 0 40px var(--gold-glow);
+    font-variant-numeric:tabular-nums;
+    position:relative;
+  }
+  .arv-range{
+    font-size:13px;
+    color:var(--text-dim);
+    margin-bottom:18px;
+    position:relative;
+    font-variant-numeric:tabular-nums;
+  }
+  .arv-stats{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:14px;
+    padding-top:18px;
+    border-top:1px solid var(--border-soft);
+    position:relative;
+  }
+  .arv-stat-label{
+    font-size:10px;
+    color:var(--text-muted);
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    margin-bottom:4px;
+  }
+  .arv-stat-val{
+    font-size:18px;
+    font-weight:600;
+    color:var(--text);
+    font-variant-numeric:tabular-nums;
+  }
+  .arv-method{
+    font-size:11px;
+    color:var(--text-muted);
+    margin-top:14px;
+    padding-top:14px;
+    border-top:1px solid var(--border-soft);
+    line-height:1.6;
+    position:relative;
+  }
+
+  /* Comps table */
+  .comps-table-wrap{ padding:4px 8px 12px; overflow-x:auto }
+  .comps-table-wrap::-webkit-scrollbar{ height:6px }
+  .comps-table-wrap::-webkit-scrollbar-track{ background:transparent }
+  .comps-table-wrap::-webkit-scrollbar-thumb{ background:var(--border);border-radius:3px }
+
+  /* Comp detail modal */
+  .comp-modal-card{
+    width:min(620px, 100%);
+    padding:0;
+    overflow:hidden;
+  }
+  #comp-modal-header{
+    padding:24px 28px 16px;
+    position:relative;
+  }
+  .comp-modal-eyebrow{
+    font-size:10px;
+    letter-spacing:0.18em;
+    text-transform:uppercase;
+    color:var(--gold);
+    margin-bottom:4px;
+    font-weight:600;
+  }
+  #comp-modal-title{
+    font-size:18px;
+    font-weight:600;
+    letter-spacing:-0.01em;
+    margin-bottom:4px;
+    line-height:1.3;
+  }
+  .comp-modal-sub{
+    font-size:12px;
+    color:var(--text-muted);
+    display:flex;gap:12px;flex-wrap:wrap;
+  }
+  .comp-modal-sub strong{ color:var(--text);font-weight:500 }
+  .comp-modal-map-wrap{
+    position:relative;
+    background:var(--surface-3);
+  }
+  .comp-modal-map{
+    width:100%;
+    height:280px;
+    background:var(--surface-3);
+  }
+  .comp-modal-map-hint{
+    position:absolute;
+    bottom:8px;left:8px;
+    background:rgba(10,15,28,0.85);
+    backdrop-filter:blur(4px);
+    border:1px solid var(--border-soft);
+    border-radius:4px;
+    padding:5px 9px;
+    font-size:10px;
+    color:var(--text-muted);
+    letter-spacing:0.04em;
+    z-index:400;
+  }
+  .comp-modal-stats{
+    padding:18px 28px;
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:14px 18px;
+    border-top:1px solid var(--border-soft);
+  }
+  .comp-modal-stat .label{
+    font-size:10px;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    margin-bottom:3px;
+  }
+  .comp-modal-stat .val{
+    font-size:15px;
+    font-weight:600;
+    color:var(--text);
+    font-variant-numeric:tabular-nums;
+  }
+  .comp-modal-stat .val.gold{ color:var(--gold) }
+  .comp-modal-stat .val.warn{ color:var(--yellow) }
+  .comp-modal-card .modal-actions{
+    padding:14px 28px 22px;
+    border-top:1px solid var(--border-soft);
+    margin-top:0;
+  }
+  .comp-modal-zillow{
+    background:var(--gold) !important;
+    color:#0A0F1C !important;
+    font-weight:600;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+    font-size:13px;
+  }
+  .comp-modal-zillow:hover{
+    box-shadow:0 0 0 4px var(--gold-soft), 0 8px 24px -8px var(--gold-glow);
+  }
+  .comp-modal-outlier-banner{
+    margin:0 28px 4px;
+    padding:10px 14px;
+    background:rgba(240,198,116,0.08);
+    border:1px solid rgba(240,198,116,0.25);
+    border-radius:var(--radius-sm);
+    color:var(--yellow);
+    font-size:12px;
+    line-height:1.5;
+  }
+
+  /* Clickable comp rows */
+  .comps-table tbody tr{ cursor:pointer }
+  .comps-table tbody tr td.ex-cell{ cursor:default }
+  .comps-table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:12px;
+    font-variant-numeric:tabular-nums;
+  }
+  .comps-table th{
+    text-align:left;
+    padding:10px 8px;
+    font-size:10px;
+    font-weight:600;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    border-bottom:1px solid var(--border-soft);
+    position:sticky;top:0;
+    background:var(--surface);
+  }
+  .comps-table td{
+    padding:10px 8px;
+    border-bottom:1px solid var(--border-soft);
+    color:var(--text-dim);
+  }
+  .comps-table tr:last-child td{ border-bottom:none }
+  .comps-table tr:hover td{ background:var(--surface-2) }
+  .comps-table tr.excluded td{ opacity:0.35;text-decoration:line-through }
+  .comps-table td.imp{ color:var(--gold);font-weight:500 }
+  .rank-cell{ color:var(--text-muted);font-weight:600;width:24px }
+  .addr-cell{ color:var(--text);min-width:160px;max-width:240px }
+  .addr-cell .addr-sub{ color:var(--text-muted);font-size:10px;margin-top:2px }
+  .price-cell{ color:var(--text);font-weight:500 }
+
+  .sim-cell{ min-width:84px }
+  .sim-wrap{
+    display:flex;align-items:center;gap:8px;
+  }
+  .sim-bar{
+    width:48px;height:4px;
+    background:var(--border);
+    border-radius:2px;
+    overflow:hidden;
+  }
+  .sim-fill{
+    height:100%;
+    background:linear-gradient(90deg,#E37B7B 0%,#F0C674 50%,#67D49A 100%);
+    border-radius:2px;
+  }
+  .sim-num{ font-weight:600;color:var(--text);font-size:11px }
+  .badge{
+    display:inline-block;
+    padding:2px 7px;
+    border-radius:10px;
+    font-size:10px;
+    font-weight:600;
+    letter-spacing:0.04em;
+  }
+  .badge-green{ background:rgba(103,212,154,0.14);color:var(--green) }
+  .badge-yellow{ background:rgba(240,198,116,0.14);color:var(--yellow) }
+  .badge-red{ background:rgba(227,123,123,0.14);color:var(--red) }
+  .badge-gray{ background:var(--surface-2);color:var(--text-muted) }
+
+  .ex-cell{ width:36px;text-align:center }
+  .ex-cell input{
+    appearance:none;
+    width:16px;height:16px;
+    border:1.5px solid #4A5A7E;
+    border-radius:3px;
+    background:#0D1424;
+    cursor:pointer;
+    position:relative;
+    transition:all .15s;
+  }
+  .ex-cell input:hover{ border-color:var(--gold) }
+  .ex-cell input:checked{ background:var(--gold);border-color:var(--gold) }
+  .ex-cell input:checked::after{
+    content:'';position:absolute;left:4px;top:1px;
+    width:5px;height:9px;
+    border:solid #0A0F1C;border-width:0 2px 2px 0;
+    transform:rotate(45deg);
+  }
+
+  /* Weights */
+  .weights-body{
+    padding:18px;
+    display:grid;
+    grid-template-columns:1fr auto;
+    gap:8px 12px;
+    align-items:center;
+  }
+  .weights-body label{
+    font-size:12px;color:var(--text-dim);
+  }
+  .weights-body input{
+    width:54px;
+    padding:6px 8px;
+    background:var(--surface-3);
+    border:1px solid var(--border-soft);
+    border-radius:var(--radius-sm);
+    font-size:12px;
+    color:var(--text);
+    text-align:right;
+    font-variant-numeric:tabular-nums;
+  }
+  .weights-body input:focus{ outline:none;border-color:var(--gold) }
+  .weights-note{
+    grid-column:1/-1;
+    font-size:11px;
+    color:var(--text-muted);
+    margin-top:6px;
+    line-height:1.6;
+  }
+  .weights-actions{
+    grid-column:1/-1;
+    display:flex;gap:8px;margin-top:8px;
+  }
+
+  /* Modal */
+  .modal{
+    position:fixed;inset:0;
+    z-index:200;
+    display:flex;align-items:center;justify-content:center;
+    padding:24px;
+  }
+  .modal-backdrop{
+    position:absolute;inset:0;
+    background:rgba(6,9,18,0.78);
+    backdrop-filter:blur(6px);
+  }
+  .modal-card{
+    position:relative;
+    width:min(440px, 100%);
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:28px;
+    box-shadow:var(--shadow-deep);
+  }
+  .modal-card h3{
+    font-size:18px;
+    font-weight:600;
+    margin-bottom:6px;
+    letter-spacing:-0.01em;
+  }
+  .modal-card .modal-sub{
+    font-size:13px;
+    color:var(--text-dim);
+    margin-bottom:20px;
+  }
+  .modal-card .form-field{ margin-bottom:14px }
+  .modal-card .form-field input{ padding:11px 14px;font-size:14px }
+  .modal-card .help{
+    font-size:11px;
+    color:var(--text-muted);
+    margin-top:6px;
+    line-height:1.55;
+  }
+  .modal-card .help a{ color:var(--gold);text-decoration:none }
+  .modal-card .help a:hover{ text-decoration:underline }
+  .usage-line{
+    display:flex;justify-content:space-between;
+    padding:14px;
+    background:var(--surface-3);
+    border-radius:var(--radius-sm);
+    margin:14px 0;
+    font-size:13px;
+  }
+  .usage-line strong{ color:var(--gold);font-variant-numeric:tabular-nums }
+  .modal-actions{
+    display:flex;gap:10px;justify-content:flex-end;margin-top:18px;
+    flex-wrap:wrap;
+  }
+  .settings-toggle{
+    display:flex;align-items:flex-start;gap:12px;
+    padding:14px;
+    background:var(--surface-3);
+    border:1px solid var(--border-soft);
+    border-radius:var(--radius-sm);
+    margin:14px 0;
+    cursor:pointer;
+    transition:border-color .15s;
+  }
+  .settings-toggle:hover{ border-color:var(--border) }
+  .settings-toggle input{
+    appearance:none;
+    width:18px;height:18px;flex-shrink:0;
+    border:1.5px solid #4A5A7E;
+    border-radius:4px;
+    background:#0D1424;
+    cursor:pointer;
+    position:relative;
+    margin-top:2px;
+    transition:all .15s;
+  }
+  .settings-toggle input:checked{ background:var(--gold);border-color:var(--gold) }
+  .settings-toggle input:checked::after{
+    content:'';position:absolute;left:5px;top:1px;
+    width:5px;height:10px;border:solid #0A0F1C;border-width:0 2px 2px 0;
+    transform:rotate(45deg);
+  }
+  .settings-toggle > div{ display:flex;flex-direction:column;gap:4px;font-size:13px;line-height:1.5 }
+  .settings-toggle strong{ color:var(--text);font-weight:600 }
+  .settings-toggle .help{ color:var(--text-muted);font-size:11px;margin:0;display:block }
+  .settings-toggle code{ font-size:10px;background:var(--surface-2);padding:1px 5px;border-radius:3px;color:var(--gold) }
+  .modal-close{
+    position:absolute;
+    top:14px;right:14px;
+    width:30px;height:30px;
+    display:flex;align-items:center;justify-content:center;
+    border-radius:6px;
+    color:var(--text-muted);
+    font-size:22px;
+    line-height:1;
+    transition:all .15s;
+  }
+  .modal-close:hover{ background:var(--surface-2);color:var(--text) }
+  .modal-hint{
+    font-size:10px;
+    color:var(--text-muted);
+    text-align:center;
+    margin-top:14px;
+    letter-spacing:0.05em;
+  }
+
+  /* Loading */
+  .loading-overlay{
+    position:fixed;inset:0;
+    z-index:150;
+    display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:18px;
+    background:rgba(10,15,28,0.7);
+    backdrop-filter:blur(4px);
+  }
+  .loader-ring{
+    width:48px;height:48px;
+    border:3px solid var(--border);
+    border-top-color:var(--gold);
+    border-radius:50%;
+    animation:spin .9s linear infinite;
+    filter:drop-shadow(0 0 12px var(--gold-glow));
+  }
+  .loader-text{
+    font-size:13px;color:var(--text-dim);
+    letter-spacing:0.04em;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg) } }
+
+  /* Empty/error states */
+  .empty-state{
+    padding:24px 18px;
+    text-align:center;
+    color:var(--text-muted);
+    font-size:13px;
+  }
+  .error-state{
+    padding:14px 18px;
+    background:rgba(227,123,123,0.08);
+    border:1px solid rgba(227,123,123,0.25);
+    color:var(--red);
+    font-size:13px;
+    border-radius:var(--radius-sm);
+    margin:0 18px 14px;
+  }
+
+  /* Toast */
+  .toast{
+    position:fixed;
+    bottom:24px;left:50%;
+    transform:translateX(-50%) translateY(40px);
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:12px 20px;
+    border-radius:8px;
+    font-size:13px;
+    box-shadow:var(--shadow-deep);
+    z-index:300;
+    opacity:0;
+    transition:all .25s;
+  }
+  .toast.visible{
+    opacity:1;
+    transform:translateX(-50%) translateY(0);
+  }
+
+  /* Subject form first-time state (taller, expanded) */
+  #subject-section.expanded .subject-body{ padding:22px }
+
+  /* Autofill banner */
+  .autofill-banner{
+    margin:0 18px 14px;
+    padding:11px 14px;
+    background:rgba(245,199,106,0.08);
+    border:1px solid rgba(245,199,106,0.25);
+    border-radius:var(--radius-sm);
+    font-size:12px;
+    color:var(--text);
+    display:flex;align-items:flex-start;gap:10px;
+    line-height:1.55;
+  }
+  .autofill-banner.error{
+    background:rgba(227,123,123,0.08);
+    border-color:rgba(227,123,123,0.25);
+    color:var(--text-dim);
+  }
+  .autofill-banner .af-icon{
+    color:var(--gold);
+    flex-shrink:0;
+    margin-top:1px;
+  }
+  .autofill-banner.error .af-icon{ color:var(--red) }
+  .autofill-banner strong{ color:var(--text);font-weight:600 }
+  .autofill-banner .af-dismiss{
+    margin-left:auto;
+    color:var(--text);
+    cursor:pointer;
+    padding:2px 8px;
+    flex-shrink:0;
+    border:1px solid var(--border);
+    border-radius:4px;
+    font-size:14px;
+    line-height:1;
+    transition:all .15s;
+  }
+  .autofill-banner .af-dismiss:hover{ background:var(--surface-2);border-color:var(--gold) }
+
+  /* A field that was autofilled — subtle gold underline-ish accent */
+  .autofilled-field input,
+  .autofilled-field select{
+    border-color:rgba(245,199,106,0.35) !important;
+    background:rgba(245,199,106,0.04) !important;
+  }
+  .autofilled-field label::after{
+    content:' · autofilled';
+    color:var(--gold);
+    font-size:10px;
+    letter-spacing:0.04em;
+    opacity:0.7;
+  }
+  .autofilled-field.verify label::after{
+    content:' · verify ⚠';
+    color:var(--yellow);
+    opacity:1;
+  }
+
+  /* Tier badge + confidence pill row above ARV */
+  .arv-meta-row{
+    display:flex;gap:8px;flex-wrap:wrap;
+    margin-bottom:14px;
+    position:relative;
+  }
+  .meta-pill{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:4px 10px;
+    background:var(--surface-2);
+    border:1px solid var(--border-soft);
+    border-radius:999px;
+    font-size:11px;
+    color:var(--text-dim);
+    letter-spacing:0.03em;
+  }
+  .meta-pill strong{
+    color:var(--text);
+    font-weight:600;
+  }
+  .meta-pill .dot{
+    width:6px;height:6px;border-radius:50%;
+  }
+  .meta-pill.tier .dot{ background:var(--gold);box-shadow:0 0 6px var(--gold-glow) }
+  .meta-pill.conf-high .dot{ background:var(--green);box-shadow:0 0 6px rgba(103,212,154,0.5) }
+  .meta-pill.conf-med  .dot{ background:var(--yellow);box-shadow:0 0 6px rgba(240,198,116,0.5) }
+  .meta-pill.conf-low  .dot{ background:var(--red);box-shadow:0 0 6px rgba(227,123,123,0.5) }
+  .meta-pill.conf-high strong{ color:var(--green) }
+  .meta-pill.conf-med  strong{ color:var(--yellow) }
+  .meta-pill.conf-low  strong{ color:var(--red) }
+  .meta-pill[title]{ cursor:help }
+
+  .tier-note{
+    font-size:11px;
+    color:var(--text-muted);
+    margin-top:-6px;
+    margin-bottom:14px;
+    position:relative;
+    line-height:1.55;
+  }
+
+  /* Market trend toggle bar */
+  .trend-bar{
+    padding:11px 18px;
+    border-bottom:1px solid var(--border-soft);
+    background:var(--surface-3);
+    display:flex;align-items:center;gap:14px;
+    font-size:12px;
+    color:var(--text-dim);
+  }
+  .trend-toggle{
+    display:flex;align-items:center;gap:8px;
+    cursor:pointer;
+    user-select:none;
+  }
+  .trend-toggle input{
+    appearance:none;
+    width:18px;height:18px;
+    border:1.5px solid #4A5A7E;
+    border-radius:4px;
+    background:#0D1424;
+    cursor:pointer;
+    position:relative;
+    flex-shrink:0;
+    transition:all .15s;
+  }
+  .trend-toggle input:hover{ border-color:var(--gold) }
+  .trend-toggle input:checked{ background:var(--gold);border-color:var(--gold) }
+  .trend-toggle input:checked::after{
+    content:'';position:absolute;left:5px;top:1px;
+    width:5px;height:10px;border:solid #0A0F1C;border-width:0 2px 2px 0;
+    transform:rotate(45deg);
+  }
+  .trend-rate{
+    display:flex;align-items:center;gap:6px;
+    margin-left:auto;
+  }
+  .trend-rate input{
+    width:54px;
+    padding:4px 8px;
+    background:var(--surface-2);
+    border:1px solid var(--border-soft);
+    border-radius:4px;
+    color:var(--text);
+    font-size:12px;
+    text-align:right;
+    font-variant-numeric:tabular-nums;
+  }
+  .trend-rate input:focus{ outline:none;border-color:var(--gold) }
+  .trend-rate input:disabled{ opacity:0.5 }
+
+  /* Outlier icon in comp row */
+  .outlier-icon{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:16px;height:16px;
+    background:rgba(240,198,116,0.18);
+    border-radius:50%;
+    color:var(--yellow);
+    font-size:10px;
+    font-weight:700;
+    margin-left:6px;
+    cursor:help;
+    vertical-align:middle;
+  }
+  .comps-table td.adj{
+    color:var(--gold);
+    font-weight:500;
+  }
+  .adj-arrow{
+    color:var(--text-muted);
+    font-size:10px;
+    margin-right:3px;
+  }
+
+  /* Address display in collapsed subject section */
+  .subject-summary{
+    padding:14px 18px;
+    font-size:13px;
+    color:var(--text-dim);
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .subject-summary strong{ color:var(--text) }
+
+  /* No-comps yet placeholder */
+  .placeholder-card{
+    padding:32px 24px;
+    text-align:center;
+    background:var(--surface);
+    border:1px dashed var(--border);
+    border-radius:var(--radius);
+    color:var(--text-muted);
+    font-size:13px;
+  }
+
+  /* Responsive: stack on small screens */
+  @media (max-width: 1024px){
+    .app-body{ flex-direction:column }
+    .map-pane{ flex:0 0 45%;border-right:none;border-bottom:1px solid var(--border-soft) }
+    .results-pane{ flex:1;border-left:none;border-top:1px solid var(--border-soft) }
+  }
+  @media (max-width: 640px){
+    .hero-content .brand{ left:24px;top:24px }
+    .hero-settings-top{ right:20px;top:20px }
+    .form-grid{ grid-template-columns:1fr 1fr }
+    .arv-stats{ grid-template-columns:1fr 1fr }
+    .arv-main{ font-size:36px }
+  }
+</style>
+</head>
+<body>
+
+<!-- ================== HERO ================== -->
+<div id="hero">
+  <canvas id="globe-canvas"></canvas>
+  <div class="hero-content">
+    <div class="brand">
+      <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="9" ry="3.5"/><path d="M12 3v18M3 12h18"/></svg></span>
+      <span class="brand-name">Comp Finder · ARV Estimator</span>
+    </div>
+    <div class="hero-settings-top">
+      <button id="hero-settings-btn">Settings</button>
+    </div>
+
+    <h1 class="hero-headline">After-repair value,<br><strong>from any address.</strong></h1>
+    <p class="hero-sub">Pulls live sold comps within a mile. Scores them on eleven weighted factors. Returns an ARV you can defend in writing.</p>
+
+    <div class="address-search" id="hero-search">
+      <input id="hero-address" type="text" placeholder="Enter a property address — street, city, state" autocomplete="off" spellcheck="false">
+      <span class="enter-hint">↵ Enter</span>
+      <span class="search-spinner"></span>
+    </div>
+
+    <div class="hero-examples">
+      <span class="hero-example-label">Try:</span>
+      <span class="hero-example" data-addr="1142 Signet Drive, Apollo Beach, FL 33572">1142 Signet Drive, Apollo Beach, FL</span>
+    </div>
+
+    <button class="hero-demo-btn" id="hero-demo-btn">▶ Load demo (1040 NW 6th Street, Boca Raton) — no API calls</button>
+
+    <div class="hero-or"><span>OR</span></div>
+
+    <div class="hero-pdf" id="hero-pdf">
+      <span class="hero-pdf-icon">📄</span>
+      <span><strong>Drop a plans PDF</strong> — we'll extract the specs and ask for the address next</span>
+      <input type="file" id="hero-pdf-input" accept=".pdf" hidden>
+    </div>
+
+    <div class="hero-foot">
+      <span class="usage-dot"></span>
+      <span id="hero-usage-text">0 / 50 Rentcast calls used this month</span>
+    </div>
+  </div>
+</div>
+
+<!-- ================== APP ================== -->
+<div id="app" hidden>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="9" ry="3.5"/><path d="M12 3v18M3 12h18"/></svg></span>
+      <span class="brand-name">Comp Finder</span>
+    </div>
+    <div class="header-right">
+      <span class="usage-pill" id="usage-pill">0 / 50 calls used</span>
+      <button class="icon-btn" id="settings-btn" title="Settings">⚙</button>
+      <button class="icon-btn" id="new-search-btn" title="New search">⌂</button>
+    </div>
+  </header>
+
+  <div class="app-body">
+    <div class="map-pane">
+      <div id="map"></div>
+      <div class="map-legend" id="map-legend" hidden>
+        <div class="legend-row">
+          <span>Similarity</span>
+          <div class="legend-grad"></div>
+          <span>0–100</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-subj-dot"></span>
+          <span>Subject property</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="results-pane" id="results-pane">
+      <!-- Subject -->
+      <section class="results-section expanded" id="subject-section">
+        <header class="section-head">
+          <h2 id="subject-head-title">Subject property</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="ghost-btn small" id="view-subject-btn" title="See aerial + open on Zillow" style="display:none;">↗ View</button>
+            <button class="collapse-btn" id="collapse-subject" aria-expanded="true" title="Collapse">−</button>
+          </div>
+        </header>
+        <div id="autofill-banner" class="autofill-banner" hidden></div>
+        <div class="subject-body" id="subject-body">
+          <div class="form-field">
+            <label>Address</label>
+            <input id="s_address" placeholder="123 Main St, City, ST">
+          </div>
+          <div class="form-grid">
+            <div class="form-field" id="ff_sqft"><label>Living SF</label><input id="s_sqft" type="number" placeholder="3500"></div>
+            <div class="form-field" id="ff_beds"><label>Beds</label><input id="s_beds" type="number" placeholder="4"></div>
+            <div class="form-field" id="ff_baths"><label>Baths</label><input id="s_baths" type="number" step="0.5" placeholder="3.5"></div>
+            <div class="form-field" id="ff_year"><label>Year built</label><input id="s_year" type="number" placeholder="2024"></div>
+            <div class="form-field" id="ff_stories"><label>Stories</label><input id="s_stories" type="number" placeholder="2"></div>
+            <div class="form-field" id="ff_garage"><label>Garage (cars)</label><input id="s_garage" type="number" placeholder="2"></div>
+            <div class="form-field" id="ff_lot"><label>Lot SF</label><input id="s_lot" type="number" placeholder="10000"></div>
+            <div class="form-field" id="ff_waterfront" style="grid-column:span 2;">
+              <label>Waterfront type</label>
+              <select id="s_waterfront">
+                <option value="none">None</option>
+                <option value="canal">Canal</option>
+                <option value="lagoon">Lagoon</option>
+                <option value="bayfront">Bayfront</option>
+                <option value="oceanfront">Oceanfront / Gulf</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-field" id="ff_density">
+            <label>Area density</label>
+            <select id="s_density">
+              <option value="dense">Dense coastal / urban (1 mi is far)</option>
+              <option value="suburban" selected>Typical suburban</option>
+              <option value="rural">Rural / large lots (3–5 mi local)</option>
+              <option value="very_rural">Very rural (10+ mi relevant)</option>
+            </select>
+          </div>
+          <div class="checkbox-grid" id="ff_checks">
+            <label class="check"><input type="checkbox" id="s_pool"><span>Pool</span></label>
+            <label class="check"><input type="checkbox" id="s_dock"><span>Dock / lift</span></label>
+            <label class="check"><input type="checkbox" id="s_gated"><span>Gated</span></label>
+            <label class="check"><input type="checkbox" id="s_newconst"><span>New construction</span></label>
+            <label class="check"><input type="checkbox" id="s_custom"><span>Custom build</span></label>
+            <label class="check"><input type="checkbox" id="s_elevated"><span>Elevated / flood-rated</span></label>
+            <label class="check"><input type="checkbox" id="s_outdoorkitchen"><span>Outdoor kitchen</span></label>
+          </div>
+        </div>
+        <button class="primary-btn" id="find-comps-btn">Find Comps</button>
+      </section>
+
+      <!-- ARV -->
+      <section class="results-section" id="arv-section" hidden>
+        <div class="arv-card" id="arv-card"></div>
+      </section>
+
+      <!-- Comps table -->
+      <section class="results-section" id="comps-section" hidden>
+        <header class="section-head">
+          <h2>Comparable sales (<span id="comps-count">0</span>)</h2>
+          <button class="ghost-btn" id="export-btn">↓ Excel</button>
+        </header>
+        <div class="trend-bar">
+          <label class="trend-toggle">
+            <input type="checkbox" id="trend-toggle-cb">
+            <span>Adjust for market trend</span>
+          </label>
+          <span style="color:var(--text-muted)" id="trend-help">Forward-adjusts stale comps to today's $/SF</span>
+          <span class="trend-rate">
+            <input type="number" id="trend-rate" step="0.05" min="-5" max="5" value="0.4" placeholder="0.4" disabled>
+            <span>% / mo</span>
+          </span>
+        </div>
+        <div class="comps-table-wrap" id="comps-table-wrap"></div>
+      </section>
+
+      <!-- Weights -->
+      <section class="results-section" id="weights-section">
+        <header class="section-head">
+          <h2>Scoring weights</h2>
+          <button class="collapse-btn" id="collapse-weights" aria-expanded="false" title="Expand">+</button>
+        </header>
+        <div class="weights-body" id="weights-body" hidden>
+          <label>Living SF</label><input type="number" id="w_sqft" value="10" min="0" max="10">
+          <label>Waterfront match</label><input type="number" id="w_water" value="9" min="0" max="10">
+          <label>Distance</label><input type="number" id="w_dist" value="8" min="0" max="10">
+          <label>Sale recency</label><input type="number" id="w_recency" value="7" min="0" max="10">
+          <label>Year built</label><input type="number" id="w_year" value="7" min="0" max="10">
+          <label>Bedrooms</label><input type="number" id="w_beds" value="6" min="0" max="10">
+          <label>Pool</label><input type="number" id="w_pool" value="6" min="0" max="10">
+          <label>Bathrooms</label><input type="number" id="w_baths" value="5" min="0" max="10">
+          <label>Lot size</label><input type="number" id="w_lot" value="4" min="0" max="10">
+          <label>Stories</label><input type="number" id="w_stories" value="3" min="0" max="10">
+          <label>Garage</label><input type="number" id="w_garage" value="3" min="0" max="10">
+          <div class="weights-note">Higher weight = factor matters more. Defaults are calibrated for luxury waterfront spec builds.</div>
+          <div class="weights-actions">
+            <button class="ghost-btn" id="weights-reset">Reset to defaults</button>
+            <button class="ghost-btn" id="weights-apply">Re-rank with new weights</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div class="modal" id="settings-modal" hidden>
+  <div class="modal-backdrop" id="modal-backdrop"></div>
+  <div class="modal-card">
+    <button class="modal-close" id="settings-x" aria-label="Close">×</button>
+    <h3>Settings</h3>
+    <p class="modal-sub">Connect your Rentcast account to pull live comps.</p>
+    <div class="form-field">
+      <label>Rentcast API key <span id="api-key-len" style="color:var(--text-muted);font-weight:400"></span></label>
+      <input type="text" id="api-key-input" placeholder="Paste your key here (typically ~32 characters)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true">
+      <p class="help">Stored verbatim in your browser only. Get a free key at <a href="https://app.rentcast.io/app/api" target="_blank" rel="noopener">rentcast.io</a> — includes 50 calls/month.</p>
+    </div>
+    <div class="form-field">
+      <label>Google Maps API key <span style="color:var(--text-muted);font-weight:400">· optional, for embedded Street View</span></label>
+      <input type="text" id="gmaps-key-input" placeholder="AIza..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true">
+      <p class="help">If set, the comp detail map embeds <strong>real, interactive Google Street View</strong> (drag to look around, walk down the street). Without a key, falls back to Google Maps hybrid. Get a key at <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud</a> — enable <strong>Maps JavaScript API</strong> + <strong>Street View Static API</strong>, then restrict the key to your origin. Free tier covers ~28k loads/month.</p>
+    </div>
+    <div class="usage-line">
+      <span>This month</span>
+      <strong id="settings-usage">0 / 50</strong>
+    </div>
+
+    <label class="settings-toggle">
+      <input type="checkbox" id="autofill-toggle">
+      <div>
+        <strong>Auto-fill subject from Rentcast</strong>
+        <span class="help">When on, Find Comps also pulls subject specs (beds, baths, sqft, pool, etc.) from <code>/v1/properties</code>. Costs 1 extra call per Find Comps (2 total). When off, Find Comps is 1 call only — fill subject manually or via PDF.</span>
+      </div>
+    </label>
+
+    <div class="modal-actions">
+      <button class="ghost-btn" id="settings-clear-key">Clear key</button>
+      <button class="ghost-btn" id="settings-reset">Reset counter</button>
+      <button class="ghost-btn" id="settings-cancel">Cancel</button>
+      <button class="primary-btn" id="settings-save" style="margin:0;width:auto;padding:11px 22px;">Save & close</button>
+    </div>
+    <p class="modal-hint">Esc to close · click outside also closes</p>
+  </div>
+</div>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loading-overlay" hidden>
+  <div class="loader-ring"></div>
+  <div class="loader-text" id="loader-text">Fetching comps...</div>
+</div>
+
+<!-- Comp/Subject detail modal -->
+<div class="modal" id="comp-modal" hidden>
+  <div class="modal-backdrop" id="comp-modal-backdrop"></div>
+  <div class="modal-card comp-modal-card">
+    <button class="modal-close" id="comp-modal-x" aria-label="Close">×</button>
+    <div id="comp-modal-header">
+      <div class="comp-modal-eyebrow" id="comp-modal-eyebrow">Comparable</div>
+      <h3 id="comp-modal-title"></h3>
+      <div id="comp-modal-sub" class="comp-modal-sub"></div>
+    </div>
+    <div class="comp-modal-map-wrap">
+      <div id="comp-modal-map" class="comp-modal-map"></div>
+      <div class="comp-modal-map-hint" id="comp-modal-map-hint">Google Maps · click anywhere on the map to enter Street View</div>
+    </div>
+    <div id="comp-modal-stats" class="comp-modal-stats"></div>
+    <div class="modal-actions">
+      <button class="ghost-btn" id="comp-modal-close">Close</button>
+      <a class="primary-btn comp-modal-zillow" id="comp-modal-zillow" target="_blank" rel="noopener" style="margin:0;width:auto;padding:11px 22px;text-decoration:none;display:inline-flex;align-items:center;gap:6px;">View on Zillow →</a>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   STATE
+   ============================================================ */
+const $ = (id) => document.getElementById(id);
+let API_KEY = localStorage.getItem('rentcast_api_key') || '';
+let GMAPS_KEY = localStorage.getItem('gmaps_api_key') || '';
+let autofillEnabled = localStorage.getItem('rentcast_autofill_enabled') === 'true';
+let mapInstance = null;
+let mapMarkers = [];        // L.marker instances for comps
+let subjectMarker = null;
+let subjectLocation = null; // {lat, lng, address}
+let subjectData = null;     // full subject from form
+let scoredComps = [];       // [{...comp, similarity, excluded}]
+let rawComps = [];          // original API rows
+
+// New state for prompt-2 features
+let lastSearchTier = null;     // {tier, radius, daysOld, reason}
+let confidenceInfo = null;     // {level, points, breakdown}
+let outlierStats = null;       // {mean, stdev, indices:Set}
+let marketTrendOn = false;
+let marketTrendRate = 0.4;     // percent per month
+let autofilledFields = new Set(); // field IDs that were autofilled
+let waterfrontAutofilled = false; // separate flag — needs explicit verify badge
+
+const DEFAULT_WEIGHTS = {
+  sqft:10, beds:6, baths:5, year:7, stories:3, garage:3,
+  lot:4, dist:8, water:9, pool:6, recency:7
+};
+
+/* ============================================================
+   UTILITIES
+   ============================================================ */
+function num(v){
+  if (v == null || v === '') return null;
+  const n = parseFloat(String(v).replace(/[$,]/g,''));
+  return isNaN(n) ? null : n;
+}
+function fmt(n, dec=0){
+  if (n == null || isNaN(n)) return '—';
+  return n.toLocaleString('en-US',{maximumFractionDigits:dec, minimumFractionDigits:dec});
+}
+function fmtMoney(n){
+  if (n == null || isNaN(n)) return '—';
+  return '$' + Math.round(n).toLocaleString();
+}
+function monthsBetween(dateStr){
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  return Math.round((Date.now() - d.getTime()) / (1000*60*60*24*30.44));
+}
+function similarityColor(s){
+  // 0=red, 50=yellow, 100=green
+  const t = Math.max(0, Math.min(100, s)) / 100;
+  // Lerp red->yellow->green
+  let r, g, b;
+  if (t < 0.5){
+    const k = t * 2;
+    r = 227 + (240-227)*k;
+    g = 123 + (198-123)*k;
+    b = 123 + (116-123)*k;
+  } else {
+    const k = (t - 0.5) * 2;
+    r = 240 + (103-240)*k;
+    g = 198 + (212-198)*k;
+    b = 116 + (154-116)*k;
+  }
+  return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+}
+function showToast(msg, ms=2400){
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('visible');
+  clearTimeout(showToast._tm);
+  showToast._tm = setTimeout(()=>t.classList.remove('visible'), ms);
+}
+function recencyBadge(months){
+  if (months == null) return '<span class="badge badge-gray">unk</span>';
+  if (months <= 6) return `<span class="badge badge-green">${months}mo</span>`;
+  if (months <= 12) return `<span class="badge badge-green">${months}mo</span>`;
+  if (months <= 18) return `<span class="badge badge-yellow">${months}mo</span>`;
+  return `<span class="badge badge-red">${months}mo</span>`;
+}
+
+/* ============================================================
+   ZILLOW LINK + COMP/SUBJECT MODAL
+   ============================================================ */
+function zillowUrlFor(address){
+  if (!address) return null;
+  // Zillow's _rb/ search URL pattern — redirects to the property if found
+  return 'https://www.zillow.com/homes/' + encodeURIComponent(address.replace(/\s+/g, ' ').trim()) + '_rb/';
+}
+
+// Cached loader for the Google Maps JS API. Loads once per session for whichever key is current.
+let _gmapsLoadPromise = null;
+let _gmapsLoadedKey = null;
+function loadGoogleMapsApi(key){
+  if (!key) return Promise.reject(new Error('No Maps API key'));
+  if (_gmapsLoadPromise && _gmapsLoadedKey === key) return _gmapsLoadPromise;
+  _gmapsLoadedKey = key;
+  _gmapsLoadPromise = new Promise((resolve, reject) => {
+    if (window.google && window.google.maps && window.google.maps.StreetViewPanorama){
+      resolve(window.google.maps);
+      return;
+    }
+    const cbName = '__gmapsReady_' + Date.now();
+    window[cbName] = () => { resolve(window.google.maps); delete window[cbName]; };
+    const s = document.createElement('script');
+    s.async = true;
+    s.defer = true;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&callback=${cbName}&libraries=streetView&v=weekly`;
+    s.onerror = () => { reject(new Error('Failed to load Google Maps JS')); delete window[cbName]; };
+    document.head.appendChild(s);
+  });
+  return _gmapsLoadPromise;
+}
+
+let modalMap = null;
+let modalMarker = null;
+let modalCircle = null;
+function openDetailModal(opts){
+  // opts: { kind:'comp'|'subject', address, city, state, zip, lat, lng,
+  //         salePrice, ppsf, sqft, beds, baths, year, monthsAgo, distance, similarity, isOutlier, outlierTip, density, waterfront }
+  const modal = $('comp-modal');
+  $('comp-modal-eyebrow').textContent = opts.kind === 'subject' ? 'Subject property' : `Comp #${opts.rank || ''}`;
+  $('comp-modal-title').textContent = opts.address || '(no address)';
+  $('comp-modal-sub').innerHTML = [
+    opts.city ? `<span>${opts.city}${opts.state ? ', ' + opts.state : ''}${opts.zip ? ' ' + opts.zip : ''}</span>` : '',
+    opts.lat != null ? `<span>${opts.lat.toFixed(4)}, ${opts.lng.toFixed(4)}</span>` : ''
+  ].filter(Boolean).join('');
+
+  // Stats grid — different content for comp vs subject
+  let stats = '';
+  if (opts.kind === 'comp'){
+    stats = `
+      <div class="comp-modal-stat"><div class="label">Sale price</div><div class="val gold">${fmtMoney(opts.salePrice)}</div></div>
+      <div class="comp-modal-stat"><div class="label">$/SF</div><div class="val">${opts.ppsf ? '$' + Math.round(opts.ppsf) : '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Similarity</div><div class="val">${opts.similarity != null ? opts.similarity : '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Living SF</div><div class="val">${opts.sqft ? fmt(opts.sqft) : '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Beds / Baths</div><div class="val">${opts.beds ?? '—'} / ${opts.baths ?? '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Year built</div><div class="val">${opts.year ?? '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Distance</div><div class="val">${opts.distance != null ? opts.distance.toFixed(2) + ' mi' : '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Sold</div><div class="val">${opts.monthsAgo != null ? opts.monthsAgo + ' mo ago' : '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Lot SF</div><div class="val">${opts.lot ? fmt(opts.lot) : '—'}</div></div>
+    `;
+  } else {
+    stats = `
+      <div class="comp-modal-stat"><div class="label">Living SF</div><div class="val">${opts.sqft ? fmt(opts.sqft) : '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Beds / Baths</div><div class="val">${opts.beds ?? '—'} / ${opts.baths ?? '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Year built</div><div class="val">${opts.year ?? '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Lot SF</div><div class="val">${opts.lot ? fmt(opts.lot) : '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Stories</div><div class="val">${opts.stories ?? '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Garage</div><div class="val">${opts.garage != null ? opts.garage + ' car' : '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Waterfront</div><div class="val gold">${opts.waterfront || '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Area density</div><div class="val">${opts.density || '—'}</div></div>
+      <div class="comp-modal-stat"><div class="label">Pool</div><div class="val">${opts.pool ? '✓' : '—'}</div></div>
+    `;
+  }
+
+  // Outlier banner if applicable
+  const existingBanner = modal.querySelector('.comp-modal-outlier-banner');
+  if (existingBanner) existingBanner.remove();
+  if (opts.isOutlier && opts.outlierTip){
+    const banner = document.createElement('div');
+    banner.className = 'comp-modal-outlier-banner';
+    banner.innerHTML = `⚠ <strong>Outlier:</strong> ${opts.outlierTip}`;
+    $('comp-modal-stats').parentNode.insertBefore(banner, $('comp-modal-stats'));
+  }
+
+  $('comp-modal-stats').innerHTML = stats;
+
+  // Zillow link
+  const url = zillowUrlFor(opts.address);
+  $('comp-modal-zillow').href = url || '#';
+
+  // Open modal
+  modal.hidden = false;
+
+  // Render the map area. Three modes, in order of preference:
+  //   1. GMAPS_KEY set → load Maps JS API and render an interactive StreetViewPanorama
+  //      (with StreetViewService to snap to the nearest pano if the exact coords have no coverage).
+  //   2. No key, but address available → fall back to the free Google Maps hybrid iframe.
+  //   3. JS API fails (bad key, billing not enabled, no pano nearby) → same iframe fallback.
+  const mapEl = $('comp-modal-map');
+  const hint = $('comp-modal-map-hint');
+  if (!mapEl) return;
+  // Wipe anything previously in the map container (iframe, panorama, leaflet)
+  mapEl.innerHTML = '';
+  mapEl.style.position = 'relative';
+
+  const fallbackToIframe = (reason) => {
+    mapEl.innerHTML = '';
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'width:100%;height:100%;border:0';
+    iframe.loading = 'lazy';
+    iframe.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
+    iframe.src = `https://maps.google.com/maps?q=${opts.lat},${opts.lng}&hl=en&z=18&t=h&output=embed`;
+    mapEl.appendChild(iframe);
+    if (hint){
+      hint.innerHTML = reason
+        ? `${reason} · showing Google Maps hybrid instead`
+        : 'Google Maps hybrid · for Street View, add a <strong>Google Maps API key</strong> in Settings';
+    }
+  };
+
+  if (GMAPS_KEY){
+    if (hint) hint.textContent = 'Loading Street View…';
+    loadGoogleMapsApi(GMAPS_KEY).then(maps => {
+      const loc = { lat: opts.lat, lng: opts.lng };
+      // Find the nearest available panorama (up to 80m away) so we don't show a blank pano if
+      // the exact lot has no Street View coverage but the street out front does.
+      const svService = new maps.StreetViewService();
+      svService.getPanorama({ location: loc, radius: 80, source: maps.StreetViewSource.OUTDOOR }, (data, status) => {
+        if (status === 'OK' && data && data.location){
+          // Aim the camera at the property from where the pano was captured
+          const panoLat = data.location.latLng.lat();
+          const panoLng = data.location.latLng.lng();
+          const dLat = opts.lat - panoLat;
+          const dLng = opts.lng - panoLng;
+          // Convert delta to compass heading (0 = N, 90 = E)
+          const heading = (Math.atan2(dLng * Math.cos(opts.lat * Math.PI / 180), dLat) * 180 / Math.PI + 360) % 360;
+          new maps.StreetViewPanorama(mapEl, {
+            pano: data.location.pano,
+            pov: { heading, pitch: 0 },
+            zoom: 0.6,
+            addressControl: false,
+            fullscreenControl: true,
+            motionTracking: false,
+            motionTrackingControl: false,
+            showRoadLabels: true,
+          });
+          if (hint) hint.textContent = 'Google Street View · drag to look around · scroll to zoom';
+        } else {
+          // No pano nearby — fall back to map embed
+          fallbackToIframe('No Street View coverage at this address');
+        }
+      });
+    }).catch(err => {
+      console.warn('Google Maps JS failed to load:', err);
+      fallbackToIframe('Google Maps key invalid or blocked');
+    });
+  } else {
+    fallbackToIframe(null);
+  }
+}
+
+function closeDetailModal(){
+  $('comp-modal').hidden = true;
+}
+
+/* ============================================================
+   USAGE COUNTER (50 free Rentcast calls per month)
+   ============================================================ */
+function getUsageKey(){
+  const d = new Date();
+  return `rentcast_usage_${d.getFullYear()}_${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function getUsageCount(){
+  return parseInt(localStorage.getItem(getUsageKey()) || '0', 10);
+}
+function incrementUsage(){
+  const k = getUsageKey();
+  const n = getUsageCount() + 1;
+  localStorage.setItem(k, String(n));
+  renderUsage();
+  return n;
+}
+function resetUsage(){
+  localStorage.setItem(getUsageKey(), '0');
+  renderUsage();
+}
+function renderUsage(){
+  const used = getUsageCount();
+  const txt = `${used} / 50 calls used`;
+  const pill = $('usage-pill');
+  pill.textContent = txt;
+  pill.classList.remove('warn','limit');
+  if (used >= 50) pill.classList.add('limit');
+  else if (used >= 40) pill.classList.add('warn');
+  $('hero-usage-text').textContent = `${used} / 50 Rentcast calls used this month`;
+  $('settings-usage').textContent = `${used} / 50`;
+}
+
+/* ============================================================
+   THREE.JS GLOBE
+   ============================================================ */
+const Globe = (function(){
+  let scene, camera, renderer, sphere, wireGroup, atmosphere, pointsGroup;
+  let animationId = null;
+  let isTransitioning = false;
+  let transitionStart = 0;
+  let transitionDuration = 2600;
+  let qStart = null;
+  let qTarget = null;
+  let transitionFromZ = 3;
+  let transitionToZ = 1.55;
+  let onTransitionDone = null;
+
+  // (lat, lng) → unit-sphere Vector3 matching Three.js's default SphereGeometry texture mapping:
+  //   lat=0, lng=0 (Greenwich at equator) → (+radius, 0, 0)  [right side of sphere]
+  //   lat=0, lng=-90° (e.g. New Orleans-ish meridian) → (0, 0, +radius)  [facing camera]
+  //   lat=+90° (north pole) → (0, +radius, 0)
+  // This matches Three.js's default sphere UV mapping where texture u=0.5 is at +X,
+  // so a standard Earth-texture's Greenwich correctly appears on the +X side.
+  function latLngToVec3(lat, lng, radius=1){
+    const latR = lat * Math.PI / 180;
+    const lngR = lng * Math.PI / 180;
+    return new THREE.Vector3(
+      radius * Math.cos(latR) * Math.cos(lngR),
+      radius * Math.sin(latR),
+      -radius * Math.cos(latR) * Math.sin(lngR)
+    );
+  }
+
+  function init(){
+    const canvas = $('globe-canvas');
+    const w = window.innerWidth, h = window.innerHeight;
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(45, w/h, 0.1, 100);
+    camera.position.z = 3;
+
+    renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(w, h);
+    renderer.setClearColor(0x000000, 0);
+
+    // Starfield background
+    const starGeo = new THREE.BufferGeometry();
+    const starCount = 1200;
+    const starPos = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount; i++){
+      // Distribute on a large sphere around the camera
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const r = 30 + Math.random() * 20;
+      starPos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+      starPos[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+      starPos[i*3+2] = r * Math.cos(phi);
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    const starMat = new THREE.PointsMaterial({
+      color: 0xC8D1E2,
+      size: 0.04,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.7
+    });
+    const stars = new THREE.Points(starGeo, starMat);
+    scene.add(stars);
+
+    // Main sphere — starts dark, gets textured if texture loads
+    const geo = new THREE.SphereGeometry(1, 64, 64);
+    const mat = new THREE.MeshPhongMaterial({
+      color: 0x152038,
+      emissive: 0x0E1828,
+      shininess: 12,
+      specular: 0x2A3A60
+    });
+    sphere = new THREE.Mesh(geo, mat);
+    scene.add(sphere);
+
+    // Try to load a real Earth texture. Multiple fallback URLs in case any CDN blocks.
+    const textureLoader = new THREE.TextureLoader();
+    textureLoader.crossOrigin = 'anonymous';
+    const textureUrls = [
+      // threejs.org examples — well-known to serve CORS headers
+      'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
+      // jsdelivr serving the same texture from github (also CORS-enabled)
+      'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_atmos_2048.jpg',
+      // unpkg three-globe textures
+      'https://unpkg.com/three-globe@2.32.0/example/img/earth-dark.jpg',
+      'https://unpkg.com/three-globe@2.32.0/example/img/earth-blue-marble.jpg'
+    ];
+    let urlIdx = 0;
+    const tryTexture = () => {
+      if (urlIdx >= textureUrls.length){
+        console.warn('[globe] All Earth texture sources failed. Using wireframe fallback.');
+        return;
+      }
+      const url = textureUrls[urlIdx];
+      console.log('[globe] Trying texture:', url);
+      textureLoader.load(
+        url,
+        (tex) => {
+          console.log('[globe] Texture loaded successfully:', url);
+          mat.map = tex;
+          mat.color.setHex(0x9CB0D8); // brighter so texture is visible
+          mat.emissive.setHex(0x0A1020);
+          mat.needsUpdate = true;
+        },
+        undefined,
+        (err) => {
+          console.warn('[globe] Texture failed:', url, err);
+          urlIdx++;
+          tryTexture();
+        }
+      );
+    };
+    tryTexture();
+
+    // Lighting — brighter overall
+    const ambient = new THREE.AmbientLight(0x4A5878, 0.85);
+    scene.add(ambient);
+    const dir = new THREE.DirectionalLight(0xFFE4B3, 1.0);
+    dir.position.set(3, 2, 4);
+    scene.add(dir);
+    const dir2 = new THREE.DirectionalLight(0x88A8D0, 0.5);
+    dir2.position.set(-3, -1, -2);
+    scene.add(dir2);
+
+    // Wireframe grid — brighter, more visible. Added as child of sphere so it inherits rotation.
+    wireGroup = new THREE.Group();
+    const wireMat = new THREE.LineBasicMaterial({ color: 0x4A6090, transparent:true, opacity:0.45 });
+    // Latitude rings
+    for (let lat = -75; lat <= 75; lat += 15){
+      const pts = [];
+      const r = Math.cos(lat * Math.PI / 180);
+      const y = Math.sin(lat * Math.PI / 180);
+      for (let lng = 0; lng <= 360; lng += 4){
+        const a = lng * Math.PI / 180;
+        pts.push(new THREE.Vector3(r*Math.cos(a)*1.002, y*1.002, r*Math.sin(a)*1.002));
+      }
+      const g = new THREE.BufferGeometry().setFromPoints(pts);
+      wireGroup.add(new THREE.Line(g, wireMat));
+    }
+    // Longitude lines
+    for (let lng = 0; lng < 360; lng += 15){
+      const pts = [];
+      const a = lng * Math.PI / 180;
+      for (let lat = -90; lat <= 90; lat += 4){
+        const phi = lat * Math.PI / 180;
+        const r = Math.cos(phi);
+        pts.push(new THREE.Vector3(r*Math.cos(a)*1.002, Math.sin(phi)*1.002, r*Math.sin(a)*1.002));
+      }
+      const g = new THREE.BufferGeometry().setFromPoints(pts);
+      wireGroup.add(new THREE.Line(g, wireMat));
+    }
+    sphere.add(wireGroup);
+
+    // Glowing city points — children of sphere, use the latLngToVec3 helper
+    pointsGroup = new THREE.Group();
+    const cities = [
+      // US East
+      [40.71,-74.00],[42.36,-71.06],[39.95,-75.16],[38.90,-77.04],[33.75,-84.39],
+      [25.76,-80.19],[27.96,-82.46],[28.54,-81.38],[36.16,-86.78],[35.23,-80.84],
+      // US Central & West
+      [29.76,-95.36],[32.78,-96.80],[41.88,-87.63],[44.97,-93.27],[39.74,-104.99],
+      [37.77,-122.41],[34.05,-118.24],[47.61,-122.33],[45.52,-122.68],[33.45,-112.07],
+      [36.17,-115.14],
+      // Latin America
+      [19.43,-99.13],[-23.55,-46.63],[-34.60,-58.38],[4.71,-74.07],[-12.04,-77.03],
+      [10.48,-66.90],
+      // Europe
+      [51.51,-0.13],[48.86,2.35],[52.52,13.40],[40.42,-3.70],[41.90,12.50],
+      [55.75,37.62],[59.33,18.07],[59.91,10.75],[55.68,12.57],[52.37,4.90],
+      [50.08,14.43],[47.50,19.04],[37.98,23.73],[41.01,28.98],
+      // Asia
+      [35.68,139.65],[37.57,126.98],[39.90,116.40],[31.23,121.47],[22.32,114.17],
+      [1.35,103.82],[13.75,100.50],[14.60,121.00],[28.61,77.21],[19.08,72.88],
+      [25.27,55.30],[24.71,46.68],
+      // Africa
+      [30.04,31.24],[-1.29,36.82],[-26.20,28.04],[6.52,3.38],[33.97,-6.85],
+      // Oceania
+      [-33.87,151.21],[-37.81,144.96],[-36.85,174.76]
+    ];
+    const pointGeo = new THREE.SphereGeometry(0.013, 12, 12);
+    const pointMat = new THREE.MeshBasicMaterial({ color: 0xF5C76A, transparent:true, opacity:0.95 });
+    cities.forEach(([lat,lng]) => {
+      const v = latLngToVec3(lat, lng, 1.012);
+      const dot = new THREE.Mesh(pointGeo, pointMat);
+      dot.position.copy(v);
+      // Stagger pulse phase
+      dot.userData.phase = Math.random() * Math.PI * 2;
+      pointsGroup.add(dot);
+    });
+    sphere.add(pointsGroup);
+
+    // Atmospheric glow — stronger, more visible
+    const atmoGeo = new THREE.SphereGeometry(1.22, 64, 64);
+    const atmoMat = new THREE.ShaderMaterial({
+      uniforms: { c:{value:0.5}, p:{value:3.2}, glowColor:{value:new THREE.Color(0xF5C76A)} },
+      vertexShader: `
+        varying vec3 vNormal;
+        void main(){
+          vNormal = normalize(normalMatrix * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 glowColor;
+        uniform float c;
+        uniform float p;
+        varying vec3 vNormal;
+        void main(){
+          float intensity = pow(c - dot(vNormal, vec3(0.0, 0.0, 1.0)), p);
+          gl_FragColor = vec4(glowColor, 1.0) * intensity * 0.7;
+        }
+      `,
+      side: THREE.BackSide,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false
+    });
+    atmosphere = new THREE.Mesh(atmoGeo, atmoMat);
+    scene.add(atmosphere);
+
+    // Start animation loop
+    animate();
+
+    // Handle resize
+    window.addEventListener('resize', onResize);
+  }
+
+  function onResize(){
+    if (!renderer) return;
+    const w = window.innerWidth, h = window.innerHeight;
+    camera.aspect = w/h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }
+
+  function easeInOutCubic(t){
+    return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
+  }
+
+  function animate(){
+    animationId = requestAnimationFrame(animate);
+    const tNow = performance.now() * 0.001;
+    // Pulse cities — vary opacity & scale
+    if (pointsGroup){
+      pointsGroup.children.forEach(dot => {
+        const phase = dot.userData.phase || 0;
+        const pulse = 0.65 + 0.35 * Math.sin(tNow * 1.5 + phase);
+        dot.material.opacity = 0.55 + 0.45 * pulse;
+        const s = 0.85 + 0.3 * pulse;
+        dot.scale.set(s, s, s);
+      });
+    }
+    if (isTransitioning){
+      const elapsed = performance.now() - transitionStart;
+      const t = Math.min(1, elapsed / transitionDuration);
+      const e = easeInOutCubic(t);
+      // Quaternion slerp between start and target — handles shortest-path rotation automatically.
+      // wireGroup and pointsGroup are children of sphere so they follow.
+      sphere.quaternion.slerpQuaternions(qStart, qTarget, e);
+      camera.position.z = transitionFromZ + (transitionToZ - transitionFromZ) * e;
+      // Fade hero in last 45% of animation
+      if (t > 0.55){
+        const fadeT = (t - 0.55) / 0.45;
+        $('hero').style.opacity = String(1 - fadeT);
+      }
+      if (t >= 1){
+        isTransitioning = false;
+        if (onTransitionDone){ const cb = onTransitionDone; onTransitionDone = null; cb(); }
+      }
+    } else {
+      // Idle rotation — small Y-axis rotation each frame, applied via quaternion.
+      // wireGroup and pointsGroup are children so they rotate with sphere.
+      sphere.rotateY(0.0010);
+    }
+    renderer.render(scene, camera);
+  }
+
+  function zoomToLocation(lat, lng, callback){
+    // Compute target quaternion: rotate sphere so that the (lat, lng) point ends up at +Z (facing camera).
+    // Using latLngToVec3 to get the LOCAL position of the point on the (unrotated) sphere.
+    // Then setFromUnitVectors gives us the rotation that moves that vector to +Z.
+    const v0 = latLngToVec3(lat, lng, 1).normalize();
+    const vTarget = new THREE.Vector3(0, 0, 1);
+    qStart = new THREE.Quaternion().copy(sphere.quaternion);
+    qTarget = new THREE.Quaternion().setFromUnitVectors(v0, vTarget);
+
+    transitionFromZ = camera.position.z;
+    transitionToZ = 1.12;
+    transitionStart = performance.now();
+    transitionDuration = 2400;
+    isTransitioning = true;
+    onTransitionDone = callback;
+  }
+
+  function destroy(){
+    if (animationId) cancelAnimationFrame(animationId);
+    if (renderer){
+      renderer.dispose();
+      renderer = null;
+    }
+    window.removeEventListener('resize', onResize);
+  }
+
+  return { init, zoomToLocation, destroy };
+})();
+
+/* ============================================================
+   MAP (Leaflet)
+   ============================================================ */
+function initMap(lat, lng){
+  if (mapInstance){ mapInstance.remove(); mapInstance = null; }
+  mapInstance = L.map('map', {
+    zoomControl: true,
+    attributionControl: true,
+    preferCanvas: true,
+  }).setView([lat, lng], 15);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap contributors · © CARTO',
+    subdomains: 'abcd',
+    maxZoom: 19
+  }).addTo(mapInstance);
+
+  // Subject pin (gold)
+  subjectMarker = L.marker([lat, lng], {
+    icon: L.divIcon({
+      className: '',
+      html: '<div class="subj-marker"></div>',
+      iconSize: [22, 22],
+      iconAnchor: [11, 11]
+    }),
+    zIndexOffset: 1000
+  }).addTo(mapInstance);
+  const subjSvThumb = GMAPS_KEY
+    ? `<img class="popup-svthumb" src="https://maps.googleapis.com/maps/api/streetview?size=300x140&location=${lat},${lng}&fov=80&pitch=0&source=outdoor&key=${encodeURIComponent(GMAPS_KEY)}" onerror="this.style.display='none'" />`
+    : '';
+  subjectMarker.bindPopup(`${subjSvThumb}<strong>Subject property</strong><br>${subjectLocation?.address || ''}`, { maxWidth: 320 });
+
+  setTimeout(() => mapInstance.invalidateSize(), 200);
+}
+
+function clearMapMarkers(){
+  mapMarkers.forEach(m => m.remove());
+  mapMarkers = [];
+}
+
+function addCompMarkers(comps, opts={}){
+  clearMapMarkers();
+  const bounds = [[subjectLocation.lat, subjectLocation.lng]];
+  comps.forEach((c, i) => {
+    if (c.lat == null || c.lng == null) return;
+    const color = similarityColor(c.similarity);
+    const html = `<div class="comp-marker${c.excluded ? ' excluded' : ''}" style="background:${color}" data-idx="${i}"></div>`;
+    const m = L.marker([c.lat, c.lng], {
+      icon: L.divIcon({ className:'', html, iconSize:[14,14], iconAnchor:[7,7] })
+    }).addTo(mapInstance);
+    const ppsfTxt = c.pricePerSqft ? '$' + Math.round(c.pricePerSqft) : '—';
+    const distTxt = c.distance != null ? c.distance.toFixed(2) + ' mi' : '—';
+    // Street View thumbnail — only when a Google Maps key is configured. The Static Street View
+    // API costs the same quota as the JS API but returns a static JPG we can use as an img src.
+    const svThumb = GMAPS_KEY
+      ? `<img class="popup-svthumb" src="https://maps.googleapis.com/maps/api/streetview?size=300x140&location=${c.lat},${c.lng}&fov=80&pitch=0&source=outdoor&key=${encodeURIComponent(GMAPS_KEY)}" onerror="this.style.display='none'" />`
+      : '';
+    m.bindPopup(`
+      ${svThumb}
+      <strong>${c.address}</strong><br>
+      <span style="color:var(--text-muted);font-size:11px;">${c.beds ?? '—'} bd · ${c.baths ?? '—'} ba · ${c.sqft ? fmt(c.sqft) + ' sf' : '—'}</span><br>
+      <div style="margin-top:8px;font-size:12px;">
+        <strong style="color:var(--gold);">${fmtMoney(c.salePrice)}</strong> · ${ppsfTxt}/sf<br>
+        Sold ${c.saleDate ? new Date(c.saleDate).toLocaleDateString() : '—'} · ${distTxt}<br>
+        Similarity: <strong>${c.similarity}</strong>
+      </div>
+    `, { maxWidth: 320 });
+    mapMarkers.push(m);
+    bounds.push([c.lat, c.lng]);
+  });
+  if (bounds.length > 1 && opts.fit){
+    mapInstance.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+  }
+}
+
+/* ============================================================
+   GEOCODING (Nominatim — free, no API key)
+   ============================================================ */
+async function geocode(address){
+  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=' + encodeURIComponent(address);
+  const res = await fetch(url, {
+    headers: { 'Accept-Language': 'en' }
+  });
+  if (!res.ok) throw new Error('Geocoding failed');
+  const data = await res.json();
+  if (!data || !data.length) throw new Error('Address not found');
+  return {
+    lat: parseFloat(data[0].lat),
+    lng: parseFloat(data[0].lon),
+    displayName: data[0].display_name
+  };
+}
+
+/* ============================================================
+   RENTCAST API
+   ============================================================ */
+function keyHint(){
+  if (!API_KEY) return 'no key set';
+  if (API_KEY.length < 12) return `${API_KEY.length} chars (too short?)`;
+  return `${API_KEY.slice(0,6)}…${API_KEY.slice(-4)} (${API_KEY.length} chars)`;
+}
+
+async function fetchCompsFromRentcast(address, opts={}){
+  if (!API_KEY) throw new Error('Set your Rentcast API key in Settings first.');
+  const params = new URLSearchParams({
+    address: address,
+    maxRadius: String(opts.radius || 1),
+    daysOld: String(opts.daysOld || 365),
+    compCount: String(opts.compCount || 25)
+  });
+  // Optional: tighten by subject if provided
+  if (opts.propertyType) params.set('propertyType', opts.propertyType);
+  if (opts.bedrooms) params.set('bedrooms', String(opts.bedrooms));
+  if (opts.bathrooms) params.set('bathrooms', String(opts.bathrooms));
+  if (opts.squareFootage) params.set('squareFootage', String(opts.squareFootage));
+
+  const url = 'https://api.rentcast.io/v1/avm/value?' + params.toString();
+  const res = await fetch(url, {
+    headers: { 'X-Api-Key': API_KEY, 'Accept': 'application/json' }
+  });
+
+  if (res.status === 401 || res.status === 403){
+    throw new Error(`Rentcast rejected the API key. Stored as: ${keyHint()}. Open Settings and re-paste it.`);
+  }
+  if (res.status === 429){
+    throw new Error('Rentcast rate limit hit. Try again in a moment.');
+  }
+  if (!res.ok){
+    let msg = 'Rentcast error ' + res.status;
+    try { const j = await res.json(); if (j.message) msg += ': ' + j.message; } catch(_){}
+    throw new Error(msg);
+  }
+
+  const data = await res.json();
+  incrementUsage();
+  return data;
+}
+
+/* Map a Rentcast comparable into our internal comp shape. */
+function normalizeRentcastComp(c, subjectLatLng){
+  // Field-name defensive: Rentcast uses these but we handle variants
+  const lat = c.latitude ?? c.lat;
+  const lng = c.longitude ?? c.lng ?? c.lon;
+  // Distance: prefer API-provided, fallback to Haversine
+  let distance = c.distance;
+  if (distance == null && lat != null && lng != null && subjectLatLng){
+    distance = haversineMiles(subjectLatLng.lat, subjectLatLng.lng, lat, lng);
+  }
+  // Sale date — Rentcast may put it in different fields depending on history availability
+  const saleDate = c.lastSaleDate || c.removedDate || c.listedDate || c.lastSeenDate || null;
+  const salePrice = c.lastSalePrice ?? c.price ?? c.salePrice ?? null;
+  const sqft = c.squareFootage ?? c.sqft ?? null;
+  const ppsf = (salePrice && sqft) ? salePrice / sqft : null;
+
+  return {
+    id: c.id,
+    address: c.formattedAddress || c.addressLine1 || '(no address)',
+    city: c.city || '',
+    state: c.state || '',
+    zip: c.zipCode || c.zip || '',
+    lat, lng,
+    salePrice,
+    saleDate,
+    monthsAgo: monthsBetween(saleDate),
+    sqft,
+    beds: c.bedrooms ?? null,
+    baths: c.bathrooms ?? null,
+    yearBuilt: c.yearBuilt ?? null,
+    lot: c.lotSize ?? null,
+    pool: c.features?.pool ?? null,
+    waterfront: null, // Rentcast doesn't reliably return waterfront flag
+    garage: c.features?.garageSpaces ?? c.garageSpaces ?? null,
+    stories: c.features?.floorCount ?? c.stories ?? null,
+    distance: (distance != null && !isNaN(distance)) ? +Number(distance).toFixed(3) : null,
+    pricePerSqft: ppsf,
+    raw: c
+  };
+}
+
+function haversineMiles(lat1, lng1, lat2, lng2){
+  const R = 3958.8;
+  const toRad = (d) => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+/* ============================================================
+   SUBJECT AUTOFILL — Rentcast /v1/properties
+   ============================================================ */
+async function fetchSubjectRecord(address){
+  if (!API_KEY) throw new Error('No API key');
+  const url = 'https://api.rentcast.io/v1/properties?' + new URLSearchParams({ address });
+  const res = await fetch(url, {
+    headers: { 'X-Api-Key': API_KEY, 'Accept': 'application/json' }
+  });
+  if (res.status === 401 || res.status === 403) throw new Error(`Rentcast rejected the API key (stored as ${keyHint()})`);
+  if (res.status === 429) throw new Error('Rate limit hit');
+  if (res.status === 404 || res.status === 400) return null; // not found
+  if (!res.ok){
+    let msg = 'Rentcast error ' + res.status;
+    try { const j = await res.json(); if (j.message) msg += ': ' + j.message; } catch(_){}
+    throw new Error(msg);
+  }
+  incrementUsage();
+  const data = await res.json();
+  return Array.isArray(data) ? (data[0] || null) : data;
+}
+
+/* Map Rentcast's text fields → our waterfront enum.
+   Rentcast has no dedicated waterfront flag; the closest signal is features.viewType
+   (sometimes "Water", "Lake", "Bay", "Ocean", "Canal"). Returns one of our enum values
+   plus a `confidence` flag indicating whether the source data was rich enough to trust. */
+function mapRentcastWaterfront(record){
+  const f = record?.features || {};
+  // Try several possible signal fields, lowercased
+  const signals = [
+    f.viewType, f.view, f.waterfront, f.waterfrontType,
+    record?.waterfront, record?.waterfrontType,
+    f.subdivision, record?.subdivision
+  ].filter(Boolean).map(s => String(s).toLowerCase());
+
+  if (!signals.length) return { value: 'none', confidence: 'unknown' };
+
+  const joined = signals.join(' | ');
+  // Explicit "none" / "no view" cases
+  if (/\bno\s*water|\bnone\b|\binland\b/.test(joined) && !/water|ocean|bay|gulf|lake|canal|lagoon/.test(joined)){
+    return { value: 'none', confidence: 'high' };
+  }
+  if (/ocean|gulf/.test(joined)) return { value: 'oceanfront', confidence: 'high' };
+  if (/\bbay/.test(joined)) return { value: 'bayfront', confidence: 'high' };
+  if (/canal/.test(joined)) return { value: 'canal', confidence: 'high' };
+  if (/lagoon|estuary/.test(joined)) return { value: 'lagoon', confidence: 'high' };
+  if (/lake|pond/.test(joined)) return { value: 'lagoon', confidence: 'medium' }; // closest match in our dropdown
+  if (/water|river|creek|harbor|marina/.test(joined)) return { value: 'bayfront', confidence: 'low' };
+  return { value: 'none', confidence: 'unknown' };
+}
+
+/* Apply subject record to form. Returns count of fields filled. */
+function applySubjectAutofill(record, opts={}){
+  if (!record) return { filled: 0 };
+  const preserve = opts.preserveExisting !== false; // default: preserve user-entered values
+  autofilledFields = new Set();
+  waterfrontAutofilled = false;
+  let filled = 0;
+  let skipped = 0;
+  const apply = (id, val, ff) => {
+    if (val == null || val === '') return;
+    const el = $(id);
+    if (!el) return;
+    if (el.type === 'checkbox'){
+      // For checkboxes: only set if currently unchecked AND Rentcast says true
+      // (don't overwrite if user explicitly checked something, but also don't un-check things)
+      if (preserve && el.checked) { skipped++; return; }
+      el.checked = !!val;
+    } else {
+      // For text/number: skip if user already entered something
+      if (preserve && el.value && String(el.value).trim() !== ''){ skipped++; return; }
+      el.value = val;
+    }
+    if (ff){
+      autofilledFields.add(ff);
+      const wrap = $(ff);
+      if (wrap) wrap.classList.add('autofilled-field');
+    }
+    filled++;
+  };
+
+  apply('s_sqft', record.squareFootage, 'ff_sqft');
+  apply('s_beds', record.bedrooms, 'ff_beds');
+  apply('s_baths', record.bathrooms, 'ff_baths');
+  apply('s_year', record.yearBuilt, 'ff_year');
+  apply('s_lot', record.lotSize, 'ff_lot');
+
+  const f = record.features || {};
+  if (f.floorCount != null) apply('s_stories', f.floorCount, 'ff_stories');
+  if (f.garageSpaces != null) apply('s_garage', f.garageSpaces, 'ff_garage');
+  else if (f.garage === true || f.garage === 'Yes') apply('s_garage', 1, 'ff_garage');
+
+  // Checkboxes — Rentcast features
+  if (f.pool === true || f.pool === 'Yes') apply('s_pool', true);
+
+  // Waterfront — heuristic + flag for explicit verify
+  // Only apply if user hasn't already chosen something other than 'none'
+  const wfWrap = $('ff_waterfront');
+  const currentWf = $('s_waterfront').value;
+  if (!preserve || currentWf === 'none' || currentWf === ''){
+    const wf = mapRentcastWaterfront(record);
+    $('s_waterfront').value = wf.value;
+    autofilledFields.add('ff_waterfront');
+    if (wfWrap){
+      wfWrap.classList.add('autofilled-field');
+      if (wf.confidence !== 'high') wfWrap.classList.add('verify');
+    }
+    waterfrontAutofilled = true;
+    filled++;
+    return { filled, skipped, waterfrontConfidence: wf.confidence, waterfrontValue: wf.value };
+  }
+  return { filled, skipped, waterfrontConfidence: 'kept', waterfrontValue: currentWf };
+}
+
+/* ============================================================
+   TIERED SEARCH — auto-expand until ≥5 comps clear similarity 60
+   ============================================================ */
+const SEARCH_TIERS = [
+  { tier: 1, radius: 0.5, daysOld: 180,  label: '0.5 mi · 6 mo' },
+  { tier: 2, radius: 1,   daysOld: 365,  label: '1 mi · 12 mo' },
+  { tier: 3, radius: 2,   daysOld: 545,  label: '2 mi · 18 mo' },
+  { tier: 4, radius: 3,   daysOld: 730,  label: '3 mi · 24 mo' },
+];
+
+async function fetchCompsTiered(subj, weights, onProgress){
+  let lastResult = null;
+  let usedTier = null;
+  let reasonForExpansion = null;
+
+  for (const tierCfg of SEARCH_TIERS){
+    if (onProgress) onProgress(tierCfg);
+    let data;
+    try {
+      data = await fetchCompsFromRentcast(subj.address, {
+        radius: tierCfg.radius,
+        daysOld: tierCfg.daysOld,
+        compCount: 25
+      });
+    } catch (err){
+      // If first tier fails, throw — otherwise return what we have
+      if (lastResult == null) throw err;
+      break;
+    }
+
+    const comparables = data.comparables || data.comps || [];
+    // Normalize + score to test the ≥60 threshold
+    const normalized = comparables.map(c => normalizeRentcastComp(c, { lat: subj.lat, lng: subj.lng }));
+    const scored = normalized.map(c => scoreComp({ ...c }, subj, weights));
+    const qualifying = scored.filter(c => c.similarity >= 60).length;
+
+    lastResult = { rawData: data, comparables, scored, qualifying, tierCfg };
+    usedTier = tierCfg;
+
+    if (qualifying >= 5){
+      break; // we're good
+    } else {
+      reasonForExpansion = `Only ${qualifying} comp${qualifying === 1 ? '' : 's'} cleared similarity 60`;
+      // Continue to next tier (unless this was the last)
+    }
+  }
+
+  return {
+    tier: usedTier,
+    rawData: lastResult.rawData,
+    comparables: lastResult.comparables,
+    qualifying: lastResult.qualifying,
+    reasonForExpansion: usedTier?.tier > 1 ? reasonForExpansion : null
+  };
+}
+
+/* ============================================================
+   OUTLIER DETECTION — flag comps where $/SF > 1.5σ from mean
+   ============================================================ */
+function detectOutliers(comps){
+  const usable = comps.filter(c => !c.excluded && c.pricePerSqft && c.similarity >= 50);
+  if (usable.length < 3) return { mean:null, stdev:null, indices:new Set() };
+  const vals = usable.map(c => c.pricePerSqft);
+  const mean = vals.reduce((a,b)=>a+b,0) / vals.length;
+  const variance = vals.reduce((s,v) => s + (v-mean)**2, 0) / vals.length;
+  const stdev = Math.sqrt(variance);
+  const indices = new Set();
+  comps.forEach((c, i) => {
+    if (!c.pricePerSqft || c.excluded) return;
+    if (Math.abs(c.pricePerSqft - mean) > 1.5 * stdev) indices.add(i);
+  });
+  return { mean, stdev, indices };
+}
+
+/* ============================================================
+   CONFIDENCE SCORE — High / Medium / Low
+   ============================================================ */
+function computeConfidence(comps, subj){
+  // Use the same set ARV uses: top 10 with sim ≥ 50, not excluded, with price + sqft
+  const usable = comps.filter(c => !c.excluded && c.salePrice && c.sqft && c.similarity >= 50).slice(0, 10);
+  const breakdown = [];
+
+  // A. Count (0-2)
+  let countPts;
+  if (usable.length >= 8){ countPts = 2; breakdown.push({ k:'Comp count', v:`${usable.length} usable`, level:'high' }); }
+  else if (usable.length >= 5){ countPts = 1; breakdown.push({ k:'Comp count', v:`${usable.length} usable`, level:'med' }); }
+  else { countPts = 0; breakdown.push({ k:'Comp count', v:`${usable.length} usable`, level:'low' }); }
+
+  // B. $/SF tightness (CV = σ/μ)
+  let tightPts = 0;
+  if (usable.length >= 3){
+    const ppsfs = usable.map(c => c.pricePerSqft);
+    const m = ppsfs.reduce((a,b)=>a+b,0) / ppsfs.length;
+    const v = ppsfs.reduce((s,x)=>s+(x-m)**2,0) / ppsfs.length;
+    const sd = Math.sqrt(v);
+    const cv = m > 0 ? sd / m : 1;
+    if (cv < 0.10){ tightPts = 2; breakdown.push({ k:'$/SF tightness', v:`CV ${(cv*100).toFixed(1)}%`, level:'high' }); }
+    else if (cv < 0.20){ tightPts = 1; breakdown.push({ k:'$/SF tightness', v:`CV ${(cv*100).toFixed(1)}%`, level:'med' }); }
+    else { tightPts = 0; breakdown.push({ k:'$/SF tightness', v:`CV ${(cv*100).toFixed(1)}%`, level:'low' }); }
+  } else {
+    breakdown.push({ k:'$/SF tightness', v:'too few comps', level:'low' });
+  }
+
+  // C. Recency (avg monthsAgo)
+  let recencyPts = 0;
+  if (usable.length){
+    const withDates = usable.filter(c => c.monthsAgo != null);
+    if (withDates.length){
+      const avgMo = withDates.reduce((s,c)=>s+c.monthsAgo,0) / withDates.length;
+      if (avgMo < 8){ recencyPts = 2; breakdown.push({ k:'Avg recency', v:`${avgMo.toFixed(1)} mo`, level:'high' }); }
+      else if (avgMo < 14){ recencyPts = 1; breakdown.push({ k:'Avg recency', v:`${avgMo.toFixed(1)} mo`, level:'med' }); }
+      else { recencyPts = 0; breakdown.push({ k:'Avg recency', v:`${avgMo.toFixed(1)} mo`, level:'low' }); }
+    } else {
+      breakdown.push({ k:'Avg recency', v:'no dates', level:'low' });
+    }
+  }
+
+  // D. Waterfront verification (only matters if subject IS waterfront)
+  let waterPts = null; // null means N/A
+  if (subj.waterfront && subj.waterfront !== 'none' && usable.length){
+    const withFlag = usable.filter(c => c.waterfront !== null);
+    const matched = usable.filter(c => c.waterfront === true).length;
+    const matchPct = usable.length ? matched / usable.length : 0;
+    const knownPct = usable.length ? withFlag.length / usable.length : 0;
+
+    if (knownPct < 0.3){
+      // Rentcast didn't return reliable waterfront flags
+      waterPts = 1; // soft credit but flag the gap
+      breakdown.push({ k:'Waterfront match', v:'unverified — Rentcast missing flags', level:'med' });
+    } else if (matchPct >= 0.6){
+      waterPts = 2;
+      breakdown.push({ k:'Waterfront match', v:`${Math.round(matchPct*100)}% of comps`, level:'high' });
+    } else if (matchPct >= 0.3){
+      waterPts = 1;
+      breakdown.push({ k:'Waterfront match', v:`${Math.round(matchPct*100)}% of comps`, level:'med' });
+    } else {
+      waterPts = 0;
+      breakdown.push({ k:'Waterfront match', v:`${Math.round(matchPct*100)}% of comps — likely understated`, level:'low' });
+    }
+  }
+
+  const totalPts = countPts + tightPts + recencyPts + (waterPts ?? 0);
+  const maxPts = 6 + (waterPts != null ? 2 : 0);
+  const pct = maxPts > 0 ? totalPts / maxPts : 0;
+  let level;
+  if (pct >= 0.66) level = 'high';
+  else if (pct >= 0.34) level = 'med';
+  else level = 'low';
+
+  return { level, pct, totalPts, maxPts, breakdown };
+}
+
+/* ============================================================
+   MARKET TREND ADJUSTMENT
+   ============================================================ */
+function adjustedPpsf(comp, ratePctPerMonth){
+  if (!comp.pricePerSqft) return null;
+  if (comp.monthsAgo == null) return comp.pricePerSqft;
+  const mult = Math.pow(1 + (ratePctPerMonth/100), comp.monthsAgo);
+  return comp.pricePerSqft * mult;
+}
+
+/* When market trend is on, recompute ARV using adjusted $/SF in place of raw $/SF.
+   Returns the same shape as estimateARV. */
+function estimateARVAdjusted(comps, subj, ratePctPerMonth){
+  const usable = comps
+    .filter(c => !c.excluded && c.salePrice && c.sqft && c.similarity >= 50)
+    .slice(0, 10);
+  if (usable.length === 0){
+    return { mid:null, low:null, high:null, ppsf:null, count:0, adjusted:true,
+      method: 'No usable comps (need ≥50 similarity)' };
+  }
+  let totalWeight = 0, weightedPpsf = 0;
+  const adj = usable.map(c => adjustedPpsf(c, ratePctPerMonth));
+  for (let i=0; i<usable.length; i++){
+    weightedPpsf += adj[i] * usable[i].similarity;
+    totalWeight += usable[i].similarity;
+  }
+  const ppsf = weightedPpsf / totalWeight;
+  const mid = ppsf * subj.sqft;
+  const mean = adj.reduce((a,b)=>a+b,0) / adj.length;
+  const variance = adj.reduce((s,v)=>s+(v-mean)**2,0) / adj.length;
+  const stdev = Math.sqrt(variance);
+  const lowPpsf = Math.max(0, ppsf - stdev * 0.7);
+  const highPpsf = ppsf + stdev * 0.7;
+  return {
+    mid,
+    low: lowPpsf * subj.sqft,
+    high: highPpsf * subj.sqft,
+    ppsf, lowPpsf, highPpsf,
+    count: usable.length,
+    adjusted: true,
+    method: `Weighted by similarity · top ${usable.length} comps · adjusted for ${ratePctPerMonth >= 0 ? '+' : ''}${ratePctPerMonth}%/mo trend`
+  };
+}
+
+/* ============================================================
+   SCORING (ported exactly from spec)
+   ============================================================ */
+function scoreComp(comp, subj, weights){
+  const factors = {};
+
+  // Living SF (w=10): exact=100, drops 2pts per 1% diff
+  if (comp.sqft && subj.sqft){
+    const diff = Math.abs(comp.sqft - subj.sqft) / subj.sqft;
+    factors.sqft = Math.max(0, 100 - diff * 200);
+  }
+
+  // Bedrooms (w=6): exact=100, -25 per bed diff
+  if (comp.beds != null && subj.beds != null){
+    const diff = Math.abs(comp.beds - subj.beds);
+    factors.beds = Math.max(0, 100 - diff * 25);
+  }
+
+  // Bathrooms (w=5): -20 per full bath diff
+  if (comp.baths != null && subj.baths != null){
+    const diff = Math.abs(comp.baths - subj.baths);
+    factors.baths = Math.max(0, 100 - diff * 20);
+  }
+
+  // Year built (w=7): -3 per year diff
+  if (comp.yearBuilt && subj.year){
+    const diff = Math.abs(comp.yearBuilt - subj.year);
+    factors.year = Math.max(0, 100 - diff * 3);
+  }
+
+  // Stories (w=3): match=100, mismatch=50
+  if (comp.stories != null && subj.stories != null){
+    factors.stories = comp.stories === subj.stories ? 100 : 50;
+  }
+
+  // Garage (w=3): -25 per car diff
+  if (comp.garage != null && subj.garage != null){
+    const diff = Math.abs(comp.garage - subj.garage);
+    factors.garage = Math.max(0, 100 - diff * 25);
+  }
+
+  // Lot size (w=4): -1 per 1% diff
+  if (comp.lot && subj.lot){
+    const diff = Math.abs(comp.lot - subj.lot) / subj.lot;
+    factors.lot = Math.max(0, 100 - diff * 100);
+  }
+
+  // Distance (w=8): density-aware
+  if (comp.distance != null){
+    const curves = {
+      dense:      { dropPerMile: 30, zeroAt: 3.5 },
+      suburban:   { dropPerMile: 20, zeroAt: 5 },
+      rural:      { dropPerMile: 10, zeroAt: 10 },
+      very_rural: { dropPerMile: 5,  zeroAt: 20 }
+    };
+    const curve = curves[subj.density] || curves.suburban;
+    factors.dist = Math.max(0, 100 - comp.distance * curve.dropPerMile);
+  }
+
+  // Waterfront (w=9): match=100, mismatch=30. Only score if comp data exists.
+  if (comp.waterfront !== null){
+    const subjHasWater = subj.waterfront !== 'none';
+    factors.water = (subjHasWater === comp.waterfront) ? 100 : 30;
+  }
+
+  // Pool (w=6): match=100, mismatch=40. Only score if comp data exists.
+  if (comp.pool !== null){
+    factors.pool = (comp.pool === subj.pool) ? 100 : 40;
+  }
+
+  // Sale recency (w=7): ≤6mo=100, 7-12 to 80, 13-18 to 50, 18+ drops fast
+  if (comp.monthsAgo != null){
+    if (comp.monthsAgo <= 6) factors.recency = 100;
+    else if (comp.monthsAgo <= 12) factors.recency = 100 - (comp.monthsAgo - 6) * 3.3;
+    else if (comp.monthsAgo <= 18) factors.recency = 80 - (comp.monthsAgo - 12) * 5;
+    else factors.recency = Math.max(0, 50 - (comp.monthsAgo - 18) * 5);
+  }
+
+  // Weighted average
+  let weightedSum = 0, weightTotal = 0;
+  for (const [k, v] of Object.entries(factors)){
+    const w = weights[k] || 0;
+    weightedSum += v * w;
+    weightTotal += w;
+  }
+  comp.similarity = weightTotal > 0 ? Math.round(weightedSum / weightTotal) : 0;
+  comp.factors = factors;
+  return comp;
+}
+
+/* ============================================================
+   ARV (ported exactly from spec)
+   ============================================================ */
+function estimateARV(comps, subj){
+  const usable = comps
+    .filter(c => !c.excluded && c.salePrice && c.sqft && c.similarity >= 50)
+    .slice(0, 10);
+  if (usable.length === 0){
+    return { mid:null, low:null, high:null, ppsf:null, count:0,
+      method: 'No usable comps (need ≥50 similarity with sale price & SF)' };
+  }
+  let totalWeight = 0, weightedPpsf = 0;
+  for (const c of usable){
+    weightedPpsf += c.pricePerSqft * c.similarity;
+    totalWeight += c.similarity;
+  }
+  const ppsf = weightedPpsf / totalWeight;
+  const mid = ppsf * subj.sqft;
+
+  const ppsfs = usable.map(c => c.pricePerSqft);
+  const mean = ppsfs.reduce((a,b)=>a+b,0) / ppsfs.length;
+  const variance = ppsfs.reduce((s,v) => s + (v-mean)**2, 0) / ppsfs.length;
+  const stdev = Math.sqrt(variance);
+  const lowPpsf = Math.max(0, ppsf - stdev * 0.7);
+  const highPpsf = ppsf + stdev * 0.7;
+
+  return {
+    mid,
+    low: lowPpsf * subj.sqft,
+    high: highPpsf * subj.sqft,
+    ppsf, lowPpsf, highPpsf,
+    count: usable.length,
+    method: `Weighted by similarity · top ${usable.length} comps (≥50 similar) · ±0.7σ range`
+  };
+}
+
+/* ============================================================
+   FORM HELPERS
+   ============================================================ */
+function readSubject(){
+  return {
+    address: $('s_address').value || '(no address)',
+    lat: subjectLocation?.lat,
+    lng: subjectLocation?.lng,
+    sqft: num($('s_sqft').value),
+    beds: num($('s_beds').value),
+    baths: num($('s_baths').value),
+    year: num($('s_year').value),
+    stories: num($('s_stories').value),
+    garage: num($('s_garage').value),
+    lot: num($('s_lot').value),
+    waterfront: $('s_waterfront').value,
+    density: $('s_density').value || 'suburban',
+    pool: $('s_pool').checked,
+    dock: $('s_dock').checked,
+    gated: $('s_gated').checked,
+    newConst: $('s_newconst').checked,
+    custom: $('s_custom').checked,
+    elevated: $('s_elevated').checked,
+    outdoorKitchen: $('s_outdoorkitchen').checked
+  };
+}
+function readWeights(){
+  return {
+    sqft: num($('w_sqft').value) || 0,
+    beds: num($('w_beds').value) || 0,
+    baths: num($('w_baths').value) || 0,
+    year: num($('w_year').value) || 0,
+    stories: num($('w_stories').value) || 0,
+    garage: num($('w_garage').value) || 0,
+    lot: num($('w_lot').value) || 0,
+    dist: num($('w_dist').value) || 0,
+    water: num($('w_water').value) || 0,
+    pool: num($('w_pool').value) || 0,
+    recency: num($('w_recency').value) || 0
+  };
+}
+function setWeights(w){
+  for (const k of Object.keys(w)) $('w_' + k).value = w[k];
+}
+
+/* ============================================================
+   RENDER: ARV + COMPS TABLE
+   ============================================================ */
+function renderResults(){
+  const subj = subjectData;
+  // Pick ARV calc based on market trend toggle
+  const arv = (marketTrendOn && !isNaN(marketTrendRate))
+    ? estimateARVAdjusted(scoredComps, subj, marketTrendRate)
+    : estimateARV(scoredComps, subj);
+  const excludedCount = scoredComps.filter(c => c.excluded).length;
+
+  // Build meta row: tier badge + confidence pill
+  let metaHtml = '';
+  if (lastSearchTier){
+    metaHtml += `<span class="meta-pill tier"><span class="dot"></span>Tier ${lastSearchTier.tier} · <strong>${lastSearchTier.label}</strong></span>`;
+  }
+  if (confidenceInfo){
+    const levelLabel = confidenceInfo.level === 'high' ? 'High' : confidenceInfo.level === 'med' ? 'Medium' : 'Low';
+    const tip = confidenceInfo.breakdown.map(b => `${b.k}: ${b.v} (${b.level})`).join('\n');
+    metaHtml += `<span class="meta-pill conf-${confidenceInfo.level}" title="${tip.replace(/"/g,'&quot;')}"><span class="dot"></span>Confidence: <strong>${levelLabel}</strong></span>`;
+  }
+  if (marketTrendOn){
+    metaHtml += `<span class="meta-pill"><span class="dot" style="background:var(--gold)"></span>Trend-adjusted <strong>${marketTrendRate >= 0 ? '+' : ''}${marketTrendRate}%/mo</strong></span>`;
+  }
+
+  // Tier note (under the pills): explains why we expanded
+  let tierNote = '';
+  if (lastSearchTier && lastSearchTier.tier > 1 && lastSearchTier.reason){
+    tierNote = `<div class="tier-note">↳ Expanded from tier 1 — ${lastSearchTier.reason} at the tighter radius.</div>`;
+  }
+
+  // ARV card
+  const arvHtml = `
+    ${metaHtml ? `<div class="arv-meta-row">${metaHtml}</div>` : ''}
+    ${tierNote}
+    <div class="arv-label">Estimated After-Repair Value${arv.adjusted ? ' · trend-adjusted' : ''}</div>
+    <div class="arv-main">${arv.mid ? fmtMoney(arv.mid) : '—'}</div>
+    <div class="arv-range">${arv.low ? fmtMoney(arv.low) : '—'} — ${arv.high ? fmtMoney(arv.high) : '—'}</div>
+    <div class="arv-stats">
+      <div>
+        <div class="arv-stat-label">$/SF ${arv.adjusted ? 'adjusted' : 'weighted'}</div>
+        <div class="arv-stat-val mono">${arv.ppsf ? '$' + Math.round(arv.ppsf) : '—'}</div>
+      </div>
+      <div>
+        <div class="arv-stat-label">Comps used</div>
+        <div class="arv-stat-val mono">${arv.count} / ${scoredComps.length - excludedCount}</div>
+      </div>
+      <div>
+        <div class="arv-stat-label">Subject SF</div>
+        <div class="arv-stat-val mono">${subj.sqft ? fmt(subj.sqft) : '—'}</div>
+      </div>
+    </div>
+    <div class="arv-method">${arv.method}${excludedCount > 0 ? ` · <strong style="color:var(--yellow)">${excludedCount} excluded</strong>` : ''}${outlierStats?.indices.size ? ` · <strong style="color:var(--yellow)">${outlierStats.indices.size} outlier${outlierStats.indices.size > 1 ? 's' : ''} flagged</strong>` : ''}</div>
+  `;
+  $('arv-card').innerHTML = arvHtml;
+  $('arv-section').hidden = false;
+
+  // Comps table
+  $('comps-count').textContent = scoredComps.length;
+  $('comps-section').hidden = false;
+  const mean = outlierStats?.mean;
+  let rows = '';
+  scoredComps.forEach((c, i) => {
+    const implied = (c.pricePerSqft && subj.sqft) ? c.pricePerSqft * subj.sqft : null;
+    const isOutlier = outlierStats?.indices.has(i);
+    let outlierTip = '';
+    if (isOutlier && c.pricePerSqft && mean){
+      const pct = ((c.pricePerSqft - mean) / mean) * 100;
+      outlierTip = `Outlier — $/SF is ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}% vs cluster mean of $${Math.round(mean)}. Verify sale was arm's-length.`;
+    }
+    const outlierIcon = isOutlier ? `<span class="outlier-icon" title="${outlierTip.replace(/"/g,'&quot;')}">⚠</span>` : '';
+
+    // $/SF cell: raw or adjusted depending on toggle
+    let ppsfCell;
+    if (marketTrendOn && c.pricePerSqft != null){
+      const adj = adjustedPpsf(c, marketTrendRate);
+      ppsfCell = `<span class="adj-arrow">${c.monthsAgo != null ? c.monthsAgo + 'mo →' : ''}</span><span class="mono">$${Math.round(c.pricePerSqft)}</span> <span class="adj mono">$${Math.round(adj)}</span>`;
+    } else {
+      ppsfCell = c.pricePerSqft ? '$' + Math.round(c.pricePerSqft) : '—';
+    }
+
+    rows += `
+      <tr class="${c.excluded ? 'excluded' : ''}" data-row="${i}">
+        <td class="ex-cell"><input type="checkbox" class="ex-cb" data-idx="${i}" ${!c.excluded ? 'checked' : ''}></td>
+        <td class="rank-cell">${i+1}</td>
+        <td class="addr-cell">
+          <div>${c.address}${outlierIcon}</div>
+          <div class="addr-sub">${c.city ? c.city + ', ' : ''}${c.state || ''}</div>
+        </td>
+        <td class="sim-cell">
+          <div class="sim-wrap">
+            <span class="sim-bar"><span class="sim-fill" style="width:${c.similarity}%"></span></span>
+            <span class="sim-num">${c.similarity}</span>
+          </div>
+        </td>
+        <td class="price-cell mono">${fmtMoney(c.salePrice)}</td>
+        <td class="mono">${ppsfCell}</td>
+        <td class="imp mono">${implied ? fmtMoney(implied) : '—'}</td>
+        <td class="mono">${c.sqft ? fmt(c.sqft) : '—'}</td>
+        <td>${c.beds ?? '—'} / ${c.baths ?? '—'}</td>
+        <td>${c.yearBuilt ?? '—'}</td>
+        <td class="mono">${c.distance != null ? c.distance.toFixed(2) : '—'}</td>
+        <td>${recencyBadge(c.monthsAgo)}</td>
+      </tr>
+    `;
+  });
+  const ppsfHeader = marketTrendOn ? '$/SF raw → adj' : '$/SF';
+  $('comps-table-wrap').innerHTML = `
+    <table class="comps-table">
+      <thead>
+        <tr>
+          <th></th><th>#</th><th>Address</th><th>Sim</th><th>Sale</th><th>${ppsfHeader}</th>
+          <th>Implied</th><th>SF</th><th>Bd/Ba</th><th>Year</th><th>Dist</th><th>Sold</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  // Wire exclusion checkboxes
+  document.querySelectorAll('.ex-cb').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      const idx = +e.target.dataset.idx;
+      scoredComps[idx].excluded = !e.target.checked;
+      recomputeDerived(); // refresh outliers, confidence, ARV, map
+    });
+  });
+
+  // Row hover → highlight marker
+  document.querySelectorAll('.comps-table tbody tr').forEach(tr => {
+    tr.addEventListener('mouseenter', () => {
+      const idx = +tr.dataset.row;
+      const m = mapMarkers[idx];
+      if (m){
+        const el = m.getElement()?.querySelector('.comp-marker');
+        if (el) el.classList.add('subject-hover');
+      }
+    });
+    tr.addEventListener('mouseleave', () => {
+      const idx = +tr.dataset.row;
+      const m = mapMarkers[idx];
+      if (m){
+        const el = m.getElement()?.querySelector('.comp-marker');
+        if (el) el.classList.remove('subject-hover');
+      }
+    });
+    tr.addEventListener('click', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+      const idx = +tr.dataset.row;
+      const c = scoredComps[idx];
+      if (!c || c.lat == null) {
+        // No coords — fall back to just panning the main map
+        const m = mapMarkers[idx];
+        if (m){ m.openPopup(); mapInstance.panTo(m.getLatLng()); }
+        return;
+      }
+      // Compute outlier info
+      const isOutlier = outlierStats?.indices.has(idx);
+      let outlierTip = '';
+      if (isOutlier && c.pricePerSqft && outlierStats?.mean){
+        const pct = ((c.pricePerSqft - outlierStats.mean) / outlierStats.mean) * 100;
+        outlierTip = `$/SF is ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}% vs cluster mean of $${Math.round(outlierStats.mean)}. Verify the sale was arm's-length.`;
+      }
+      openDetailModal({
+        kind: 'comp',
+        rank: idx + 1,
+        address: c.address,
+        city: c.city, state: c.state, zip: c.zip,
+        lat: c.lat, lng: c.lng,
+        salePrice: c.salePrice,
+        ppsf: c.pricePerSqft,
+        sqft: c.sqft,
+        beds: c.beds, baths: c.baths,
+        year: c.yearBuilt,
+        lot: c.lot,
+        monthsAgo: c.monthsAgo,
+        distance: c.distance,
+        similarity: c.similarity,
+        isOutlier, outlierTip
+      });
+    });
+  });
+
+  $('map-legend').hidden = false;
+}
+
+/* ============================================================
+   EXPORT TO EXCEL
+   ============================================================ */
+function exportToExcel(){
+  if (!scoredComps.length){ showToast('No comps to export'); return; }
+  const subj = subjectData;
+  const arvRaw = estimateARV(scoredComps, subj);
+  const arvAdj = marketTrendOn ? estimateARVAdjusted(scoredComps, subj, marketTrendRate) : null;
+
+  const subjectSheet = [
+    ['SUBJECT PROPERTY'],
+    ['Address', subj.address],
+    ['Lat', subj.lat],
+    ['Lng', subj.lng],
+    ['Living SF', subj.sqft],
+    ['Bedrooms', subj.beds],
+    ['Bathrooms', subj.baths],
+    ['Year Built', subj.year],
+    ['Stories', subj.stories],
+    ['Garage', subj.garage],
+    ['Lot SF', subj.lot],
+    ['Waterfront', subj.waterfront],
+    ['Area density', subj.density],
+    ['Pool', subj.pool ? 'Yes' : 'No'],
+    ['Dock', subj.dock ? 'Yes' : 'No'],
+    ['Gated', subj.gated ? 'Yes' : 'No'],
+    ['New construction', subj.newConst ? 'Yes' : 'No'],
+    ['Custom build', subj.custom ? 'Yes' : 'No'],
+    ['Elevated/Flood-rated', subj.elevated ? 'Yes' : 'No'],
+    ['Outdoor kitchen', subj.outdoorKitchen ? 'Yes' : 'No']
+  ];
+
+  const arvSheet = [
+    ['ARV ESTIMATE'],
+    ['Estimated ARV (mid, raw)', arvRaw.mid ? Math.round(arvRaw.mid) : ''],
+    ['Range low (raw)', arvRaw.low ? Math.round(arvRaw.low) : ''],
+    ['Range high (raw)', arvRaw.high ? Math.round(arvRaw.high) : ''],
+    ['$/SF weighted (raw)', arvRaw.ppsf ? Math.round(arvRaw.ppsf) : ''],
+    ['Comps used', arvRaw.count],
+    ['Method', arvRaw.method],
+    [''],
+    ['SEARCH'],
+    ['Tier used', lastSearchTier ? `Tier ${lastSearchTier.tier} · ${lastSearchTier.label}` : ''],
+    ['Qualifying comps (sim ≥60)', lastSearchTier?.qualifying ?? ''],
+    ['Expansion reason', lastSearchTier?.reason || 'n/a'],
+    [''],
+    ['CONFIDENCE'],
+    ['Level', confidenceInfo ? (confidenceInfo.level === 'high' ? 'High' : confidenceInfo.level === 'med' ? 'Medium' : 'Low') : ''],
+    ['Score', confidenceInfo ? `${confidenceInfo.totalPts} / ${confidenceInfo.maxPts}` : ''],
+    ...(confidenceInfo ? confidenceInfo.breakdown.map(b => [`  ${b.k}`, `${b.v} (${b.level})`]) : []),
+    [''],
+    ['OUTLIERS'],
+    ['Cluster mean $/SF', outlierStats?.mean ? Math.round(outlierStats.mean) : ''],
+    ['Cluster stdev $/SF', outlierStats?.stdev ? Math.round(outlierStats.stdev) : ''],
+    ['# flagged (>1.5σ from mean)', outlierStats?.indices.size ?? 0],
+  ];
+  if (arvAdj){
+    arvSheet.push([''], ['MARKET-TREND ADJUSTED']);
+    arvSheet.push(['Monthly rate (%)', marketTrendRate]);
+    arvSheet.push(['Estimated ARV (mid, adjusted)', arvAdj.mid ? Math.round(arvAdj.mid) : '']);
+    arvSheet.push(['Range low (adjusted)', arvAdj.low ? Math.round(arvAdj.low) : '']);
+    arvSheet.push(['Range high (adjusted)', arvAdj.high ? Math.round(arvAdj.high) : '']);
+    arvSheet.push(['$/SF (adjusted)', arvAdj.ppsf ? Math.round(arvAdj.ppsf) : '']);
+  }
+
+  const headers = ['Rank','Excluded','Outlier','Address','City','State','Zip','Lat','Lng','Similarity','Sale Price','$/SF (raw)', ...(marketTrendOn ? ['$/SF (adjusted)'] : []),'Implied subject price','Sale Date','Months Ago','Living SF','Beds','Baths','Year Built','Stories','Garage','Lot SF','Distance (mi)'];
+  const rows = scoredComps.map((c, i) => {
+    const isOutlier = outlierStats?.indices.has(i) ? 'YES' : '';
+    const adjPpsf = marketTrendOn && c.pricePerSqft != null ? adjustedPpsf(c, marketTrendRate) : null;
+    const baseRow = [
+      i+1,
+      c.excluded ? 'EXCLUDED' : '',
+      isOutlier,
+      c.address, c.city, c.state, c.zip, c.lat, c.lng,
+      c.similarity,
+      c.salePrice ? Math.round(c.salePrice) : '',
+      c.pricePerSqft ? Math.round(c.pricePerSqft) : '',
+    ];
+    if (marketTrendOn) baseRow.push(adjPpsf ? Math.round(adjPpsf) : '');
+    baseRow.push(
+      (c.pricePerSqft && subj.sqft) ? Math.round(c.pricePerSqft * subj.sqft) : '',
+      c.saleDate || '', c.monthsAgo ?? '',
+      c.sqft ?? '', c.beds ?? '', c.baths ?? '',
+      c.yearBuilt ?? '', c.stories ?? '', c.garage ?? '',
+      c.lot ?? '', c.distance ?? ''
+    );
+    return baseRow;
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(subjectSheet), 'Subject');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(arvSheet), 'ARV');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, ...rows]), 'Comps');
+
+  const filename = `Comp_Analysis_${(subj.address || 'subject').replace(/[^a-z0-9]/gi,'_').slice(0,40)}.xlsx`;
+  XLSX.writeFile(wb, filename);
+  showToast('Exported ' + filename);
+}
+
+/* ============================================================
+   PDF EXTRACTION (regex-based, ported from original tool)
+   ============================================================ */
+async function extractTextFromPDF(file){
+  if (!window.pdfjsLib) throw new Error('PDF library not loaded');
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let allText = '';
+  for (let i = 1; i <= pdf.numPages; i++){
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(item => item.str).join(' ');
+    allText += pageText + '\n\n--- PAGE BREAK ---\n\n';
+  }
+  return allText;
+}
+
+function pdfRegexExtract(text){
+  const out = {};
+
+  // Address — look for a street-style address
+  const addrMatch = text.match(/(\d{1,6}\s+[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)*\s+(?:Drive|Dr|Street|St|Lane|Ln|Avenue|Ave|Court|Ct|Place|Pl|Road|Rd|Boulevard|Blvd|Way|Circle|Cir|Terrace|Ter|Trail|Tr))(?:[,\s]+[A-Z][a-zA-Z]+)?(?:[,\s]+(?:FL|GA|TX|CA|NY|NC|SC|AL|AZ|VA|TN|CO|WA|OR|MA|NJ|PA|OH|MI|IL|MD|MN|MO|WI|KY|LA|OK|UT|NV|AR|MS|KS|NM|NE|ID|HI|ME|NH|RI|MT|DE|SD|ND|AK|VT|WY))?(?:[,\s]+\d{5})?/i);
+  if (addrMatch) out.address = addrMatch[0].trim();
+
+  // Living SF — try "Living Only" section first, else infer from biggest SF number
+  const livingMatch = text.match(/living\s*only[\s\S]{0,500}?(?=DOOR|WINDOW|---|$)/i);
+  if (livingMatch){
+    const nums = [...livingMatch[0].matchAll(/(\d{3,5})\s*SF/gi)].map(m => parseInt(m[1]));
+    if (nums.length) out.sqft = Math.max(...nums);
+  }
+  if (!out.sqft){
+    const allSF = [...text.matchAll(/(\d{4,5})\s*SF/gi)].map(m => parseInt(m[1])).filter(n => n >= 1500 && n <= 15000);
+    const unique = [...new Set(allSF)].sort((a,b) => b-a);
+    if (unique.length >= 2 && unique[0] > unique[1] * 1.2) out.sqft = unique[1];
+    else if (unique.length) out.sqft = unique[0];
+  }
+
+  // Bedrooms — require "MASTER" or numbered ("BEDROOM 2") to avoid generic matches
+  const bedLabels = new Set();
+  for (const m of text.matchAll(/(MASTER\s+BEDROOM|BEDROOM\s*\d)/gi)){
+    bedLabels.add(m[1].toUpperCase().replace(/\s+/g, ' '));
+  }
+  if (bedLabels.size > 0) out.beds = bedLabels.size;
+
+  // Bathrooms — masters or numbered, + powder rooms = +0.5 each
+  const bathLabels = new Set();
+  for (const m of text.matchAll(/(MASTER\s+BATH|BATH\s*\d)/gi)){
+    bathLabels.add(m[1].toUpperCase().replace(/\s+/g, ' '));
+  }
+  let baths = bathLabels.size;
+  const halfBaths = (text.match(/\bPWDR\b/gi) || []).length;
+  if (baths > 0) out.baths = baths + halfBaths * 0.5;
+
+  // Year
+  const yearMatch = text.match(/\b(20[2-3]\d)\b/);
+  if (yearMatch) out.year = parseInt(yearMatch[1]);
+
+  // Stories
+  if (/3rd\s*floor|third\s*floor/i.test(text)) out.stories = 3;
+  else if (/2nd\s*floor|second\s*floor/i.test(text)) out.stories = 2;
+  else out.stories = 1;
+
+  // Garage
+  const garageLabels = new Set();
+  for (const m of text.matchAll(/\bGARAGE\s*(\d?)\b/gi)){
+    garageLabels.add('G' + (m[1] || '1'));
+  }
+  if (garageLabels.size > 0){
+    out.garage = garageLabels.size === 1 ? 2 : 3;
+  }
+
+  // Features
+  out.pool = /\bPOOL\b/i.test(text) && !/no\s*pool/i.test(text);
+  out.dock = /\bDOCK\b/i.test(text) || /boat\s*lift/i.test(text);
+  out.outdoorKitchen = /OUTDOOR\s*KITCHEN/i.test(text);
+  out.elevated = /elevated|stem\s*wall|flood\s*resist|FEMA|D\.?F\.?E\.?/i.test(text);
+  out.newConst = true; // PDF is plans = new construction
+
+  // Waterfront — keyword scan, fall back to indirect signals (NAVD + FEMA = coastal FL waterfront)
+  if (/bayfront|tampa\s*bay|deep\s*water|gulf\s*access|bay\s*access/i.test(text)){
+    out.waterfront = 'bayfront';
+  } else if (/canal/i.test(text)){
+    out.waterfront = 'canal';
+  } else if (/lagoon/i.test(text)){
+    out.waterfront = 'lagoon';
+  } else if (/oceanfront|gulf\s*front/i.test(text)){
+    out.waterfront = 'oceanfront';
+  } else if (/NAVD/i.test(text) && /FEMA/i.test(text)){
+    // Strong indirect signal for FL coastal waterfront
+    out.waterfront = 'bayfront';
+    out._waterfrontInferred = true;
+  }
+
+  return out;
+}
+
+/* Apply PDF-extracted data to the subject form (using the same autofill highlighting). */
+function applyPDFExtraction(data){
+  autofilledFields = new Set();
+  waterfrontAutofilled = false;
+  let filled = 0;
+  const apply = (id, val, ff) => {
+    if (val == null || val === '') return;
+    const el = $(id);
+    if (!el) return;
+    if (el.type === 'checkbox') el.checked = !!val;
+    else el.value = val;
+    if (ff){
+      autofilledFields.add(ff);
+      const wrap = $(ff);
+      if (wrap) wrap.classList.add('autofilled-field');
+    }
+    filled++;
+  };
+  if (data.address) apply('s_address', data.address);
+  apply('s_sqft', data.sqft, 'ff_sqft');
+  apply('s_beds', data.beds, 'ff_beds');
+  apply('s_baths', data.baths, 'ff_baths');
+  apply('s_year', data.year, 'ff_year');
+  apply('s_stories', data.stories, 'ff_stories');
+  apply('s_garage', data.garage, 'ff_garage');
+  if (data.pool) apply('s_pool', true);
+  if (data.dock) apply('s_dock', true);
+  if (data.outdoorKitchen) apply('s_outdoorkitchen', true);
+  if (data.elevated) apply('s_elevated', true);
+  if (data.newConst) apply('s_newconst', true);
+  if (data.waterfront){
+    apply('s_waterfront', data.waterfront, 'ff_waterfront');
+    if (data._waterfrontInferred){
+      $('ff_waterfront')?.classList.add('verify');
+    }
+    waterfrontAutofilled = true;
+  }
+  return { filled, waterfrontInferred: !!data._waterfrontInferred };
+}
+
+/* Full flow: user dropped/picked a PDF on the hero */
+async function onPDFEntered(file){
+  if (!file || !file.name.toLowerCase().endsWith('.pdf')){
+    showToast('Please drop a PDF file');
+    return;
+  }
+  showLoading('Reading plans PDF…');
+  let extractedData;
+  try {
+    const text = await extractTextFromPDF(file);
+    extractedData = pdfRegexExtract(text);
+  } catch (err){
+    hideLoading();
+    showToast('Could not parse PDF: ' + err.message);
+    return;
+  }
+
+  // If PDF extracted an address, try to geocode it
+  let lat = null, lng = null, finalAddress = extractedData.address || '';
+
+  if (finalAddress){
+    $('loader-text').textContent = 'Locating address from PDF…';
+    try {
+      const loc = await geocode(finalAddress);
+      lat = loc.lat; lng = loc.lng;
+    } catch (err){
+      console.warn('Geocode failed for PDF address:', err);
+    }
+  }
+
+  hideLoading();
+
+  // If we didn't get a location, prompt the user for an address
+  if (lat == null){
+    const promptMsg = finalAddress
+      ? `PDF said "${finalAddress}" but I couldn't locate it. Confirm or correct the address:`
+      : `Couldn't find an address in the PDF. Enter the property address:`;
+    const userAddr = prompt(promptMsg, finalAddress || '');
+    if (!userAddr) return;
+    showLoading('Locating address…');
+    try {
+      const loc = await geocode(userAddr);
+      lat = loc.lat; lng = loc.lng;
+      finalAddress = userAddr;
+    } catch (err){
+      hideLoading();
+      showToast('Could not locate that address. Try a more specific one.');
+      return;
+    }
+    hideLoading();
+  }
+
+  subjectLocation = { lat, lng, address: finalAddress };
+  // Globe zoom + transition, then apply the extraction
+  Globe.zoomToLocation(lat, lng, () => {
+    transitionToApp(lat, lng, finalAddress, { skipAutofill: true });
+    // Apply PDF data once the app view is open
+    setTimeout(() => {
+      const result = applyPDFExtraction(extractedData);
+      const banner = $('autofill-banner');
+      banner.hidden = false;
+      banner.classList.remove('error');
+      banner.innerHTML = `
+        <span class="af-icon">📄</span>
+        <span><strong>Pulled ${result.filled} fields from the PDF.</strong> Review all values${result.waterfrontInferred ? ' — waterfront was inferred from NAVD/FEMA references and needs verification' : ''}. You can also click Find Comps to layer in Rentcast comps.</span>
+        <span class="af-dismiss" onclick="this.parentElement.hidden = true">×</span>
+      `;
+    }, 600);
+  });
+}
+
+/* ============================================================
+   FLOW: HERO → APP
+   ============================================================ */
+async function onAddressEnter(){
+  const addr = $('hero-address').value.trim();
+  if (!addr) return;
+  const wrap = $('hero-search');
+  wrap.classList.add('searching');
+  try {
+    const loc = await geocode(addr);
+    subjectLocation = { lat: loc.lat, lng: loc.lng, address: addr };
+    // Trigger globe zoom
+    Globe.zoomToLocation(loc.lat, loc.lng, () => {
+      // Hand off to app view
+      transitionToApp(loc.lat, loc.lng, addr);
+    });
+  } catch (err){
+    wrap.classList.remove('searching');
+    showToast('Could not locate that address. Try a more specific one.');
+    console.error(err);
+  }
+}
+
+/* ============================================================
+   DEMO DATA — 1040 NW 6th Street, Boca Raton (no API calls)
+   ============================================================ */
+const DEMO_SUBJECT = {
+  address: '1040 NW 6th Street, Boca Raton, FL 33486',
+  lat: 26.3593,
+  lng: -80.1030,
+  sqft: 1928,
+  beds: 4,
+  baths: 3,
+  year: 1964,
+  stories: 1,
+  garage: 2,
+  lot: 7500,
+  waterfront: 'lagoon',
+  density: 'suburban',
+  pool: false
+};
+
+// Compact format: [address, salePrice, sqft, beds, baths, year, distMi, monthsAgo, similarity]
+const DEMO_COMPS_RAW = [
+  ['200 NW 11th Ave, Boca Raton, FL 33486',     1075000, 1804, 4, 3, 1964, 0.20,  2, 95],
+  ['1050 NW 6th Ter, Boca Raton, FL 33486',     1150000, 1860, 4, 3, 1966, 0.05,  1, 94],
+  ['545 NW 13th Dr, Boca Raton, FL 33486',      1075000, 2000, 3, 3, 1967, 0.45, 11, 92],
+  ['100 SW 8th Ave, Boca Raton, FL 33486',      1349000, 1846, 4, 3, 1962, 0.47,  4, 92],
+  ['1 SW 8th Ter, Boca Raton, FL 33486',         950000, 2039, 3, 3, 1963, 0.38,  9, 92],
+  ['581 NW 13th Dr, Boca Raton, FL 33486',      1099999, 2076, 4, 3, 1962, 0.47,  1, 91],
+  ['600 NW 12th Ave, Boca Raton, FL 33486',      800000, 1857, 4, 3, 1973, 0.16,  1, 90],
+  ['167 NW 6th Ave, Boca Raton, FL 33432',       875000, 1922, 4, 3, 1958, 0.63,  8, 90],
+  ['666 NW 11th Ave, Boca Raton, FL 33486',      799000, 2086, 4, 3, 1968, 0.15,  3, 90],
+  ['605 NW 10th Ct, Boca Raton, FL 33486',      1150000, 1751, 4, 3, 1969, 0.07,  9, 88],
+  ['1001 NW 6th Dr, Boca Raton, FL 33486',      1149000, 2227, 4, 3, 1966, 0.14,  6, 88],
+  ['171 SW 7th Ave, Boca Raton, FL 33486',       900000, 1714, 3, 3, 1962, 0.59,  5, 88],
+  ['85 SW 11th Ct, Boca Raton, FL 33486',        998000, 1873, 4, 3, 1967, 0.46, 14, 87],
+  ['50 SW 11th Ave, Boca Raton, FL 33486',      1300000, 2303, 5, 3, 1967, 0.39,  2, 87],
+  ['599 NW 13th Dr, Boca Raton, FL 33486',       835000, 1608, 3, 3, 1962, 0.47,  3, 87],
+  ['737 Aurelia St, Boca Raton, FL 33486',      1445000, 2312, 4, 3, 1963, 0.41,  7, 86],
+  ['1633 NW 4th St, Boca Raton, FL 33486',       599000, 1876, 4, 3, 1977, 0.66,  3, 85],
+  ['792 W Palmetto Park Rd, Boca Raton, FL 33486', 1250000, 2100, 4, 3, 1964, 0.44, 14, 85],
+  ['198 NW 10th Ct, Boca Raton, FL 33486',      1175000, 2269, 4, 3, 1960, 0.20, 10, 85],
+  ['755 St Albans Dr, Boca Raton, FL 33486',     749000, 1911, 3, 3, 1989, 0.68,  7, 82],
+  ['1318 NW 4th St, Boca Raton, FL 33486',      1099000, 2318, 4, 3, 1973, 0.35, 10, 81],
+  ['1020 NW 6th St, Boca Raton, FL 33486',      1275000, 2416, 4, 3, 1964, 0.04, 16, 79],
+  ['755 Saint Albans Dr, Boca Raton, FL 33486',  699999, 1911, 3, 3, 1989, 0.68,  6, 78],
+  ['1200 NW 8th St, Boca Raton, FL 33486',      1289000, 2365, 5, 3, 1975, 0.28, 15, 72],
+  ['698 NW 12th Rd, Boca Raton, FL 33486',       899000, 2250, 4, 3, 2004, 0.28,  6, 71],
+];
+
+function buildDemoComps(){
+  return DEMO_COMPS_RAW.map((row, idx) => {
+    const [address, salePrice, sqft, beds, baths, yearBuilt, distance, monthsAgo, similarity] = row;
+    // Place each comp in the correct quadrant from the subject based on the address direction.
+    // NW addresses land north-west of the subject, SW south-west, etc. Within a quadrant we
+    // vary the bearing slightly so dots don't all stack on top of each other.
+    const upperAddr = address.toUpperCase();
+    let bearing; // degrees: 0=N, 90=E, 180=S, 270=W
+    const isAvenue = /\bAVE\b/i.test(address);
+    if (upperAddr.includes(' NW ')){
+      // Avenues run N-S so most of the offset is WEST; Streets/Drives are E-W so most is NORTH
+      bearing = isAvenue ? (255 + (idx * 7) % 30) : (310 + (idx * 5) % 35);
+    } else if (upperAddr.includes(' SW ')){
+      bearing = isAvenue ? (240 - (idx * 7) % 25) : (210 + (idx * 5) % 30);
+    } else if (upperAddr.includes(' NE ')){
+      bearing = isAvenue ? (85 - (idx * 7) % 25) : (40 + (idx * 5) % 30);
+    } else if (upperAddr.includes(' SE ')){
+      bearing = isAvenue ? (110 + (idx * 7) % 25) : (140 + (idx * 5) % 30);
+    } else {
+      // Named streets (Aurelia, St Albans, Palmetto Park) — golden-angle fallback
+      bearing = (idx * 137.5) % 360;
+    }
+    const rad = bearing * Math.PI / 180;
+    // Use cos for lat (north positive) and sin for lng with WEST/EAST sign baked in via bearing
+    const latDeg = (distance * Math.cos(rad)) / 69;
+    const lngDeg = (distance * Math.sin(rad)) / 62; // ~62 mi per deg lng at lat 26
+    // Parse city/state/zip
+    const m = address.match(/,\s*([^,]+),\s*([A-Z]{2})\s*(\d{5})$/);
+    return {
+      address,
+      city: m ? m[1].trim() : '',
+      state: m ? m[2] : '',
+      zip: m ? m[3] : '',
+      lat: DEMO_SUBJECT.lat + latDeg,
+      lng: DEMO_SUBJECT.lng + lngDeg,
+      salePrice,
+      saleDate: new Date(Date.now() - monthsAgo * 30.44 * 86400 * 1000).toISOString().slice(0, 10),
+      monthsAgo,
+      sqft,
+      beds, baths,
+      yearBuilt,
+      lot: null,
+      pool: null,
+      waterfront: null,
+      garage: null,
+      stories: null,
+      distance,
+      pricePerSqft: Math.round((salePrice / sqft) * 100) / 100,
+      similarity,
+      raw: {}
+    };
+  });
+}
+
+async function loadDemo(){
+  // Don't fire any API calls — preload everything
+  $('hero-address').value = DEMO_SUBJECT.address;
+  subjectLocation = { lat: DEMO_SUBJECT.lat, lng: DEMO_SUBJECT.lng, address: DEMO_SUBJECT.address };
+
+  Globe.zoomToLocation(DEMO_SUBJECT.lat, DEMO_SUBJECT.lng, () => {
+    transitionToApp(DEMO_SUBJECT.lat, DEMO_SUBJECT.lng, DEMO_SUBJECT.address, { skipAutofill: true });
+
+    // Wait for the app view to render, then populate subject form + comps
+    setTimeout(() => {
+      // Populate subject form (mark fields as autofilled for visual continuity)
+      const setField = (id, val, ff) => {
+        const el = $(id);
+        if (!el) return;
+        if (el.type === 'checkbox') el.checked = !!val;
+        else el.value = val ?? '';
+        if (ff) $(ff)?.classList.add('autofilled-field');
+      };
+      setField('s_sqft', DEMO_SUBJECT.sqft, 'ff_sqft');
+      setField('s_beds', DEMO_SUBJECT.beds, 'ff_beds');
+      setField('s_baths', DEMO_SUBJECT.baths, 'ff_baths');
+      setField('s_year', DEMO_SUBJECT.year, 'ff_year');
+      setField('s_stories', DEMO_SUBJECT.stories, 'ff_stories');
+      setField('s_garage', DEMO_SUBJECT.garage, 'ff_garage');
+      setField('s_lot', DEMO_SUBJECT.lot, 'ff_lot');
+      setField('s_waterfront', DEMO_SUBJECT.waterfront, 'ff_waterfront');
+      $('ff_waterfront')?.classList.add('verify');
+      $('s_density').value = DEMO_SUBJECT.density;
+
+      // Set subject data + comps + ranking state
+      subjectData = readSubject();
+      rawComps = buildDemoComps();
+      lastSearchTier = { tier: 'demo', label: '2 mi · 18 mo (demo)', radius: 2, daysOld: 545, qualifying: rawComps.length, reason: null };
+
+      // Banner
+      const banner = $('autofill-banner');
+      banner.hidden = false;
+      banner.classList.remove('error');
+      banner.innerHTML = `
+        <span class="af-icon">▶</span>
+        <span><strong>Demo loaded — no API calls used.</strong> Click any comp row to see the satellite view and open it on Zillow. Edit subject specs to re-rank instantly.</span>
+        <span class="af-dismiss" onclick="this.parentElement.hidden = true">×</span>
+      `;
+
+      rerank();
+      collapseSubject(true);
+    }, 1400);
+  });
+}
+
+function transitionToApp(lat, lng, address, opts={}){
+  $('hero').classList.add('fading');
+  // Immediately make hero non-interactive (belt + suspenders with the .fading class)
+  $('hero').style.pointerEvents = 'none';
+  $('app').hidden = false;
+  // Init map with this lat/lng
+  initMap(lat, lng);
+  // Prefill address
+  $('s_address').value = address;
+  // Show "View" subject button now that we have a location
+  const viewBtn = $('view-subject-btn');
+  if (viewBtn) viewBtn.style.display = '';
+  setTimeout(() => {
+    $('app').classList.add('visible');
+    Globe.destroy();
+    // Fully remove the hero from the layout so nothing it contains can intercept events
+    $('hero').style.display = 'none';
+  }, 400);
+}
+
+async function tryAutofillSubject(address){
+  const banner = $('autofill-banner');
+  if (!API_KEY){
+    banner.hidden = false;
+    banner.classList.remove('error');
+    banner.innerHTML = `
+      <span class="af-icon">⚡</span>
+      <span><strong>Add a Rentcast API key</strong> in Settings to autofill the subject record (including a waterfront guess based on Rentcast's view-type field).</span>
+      <span class="af-dismiss" onclick="this.parentElement.hidden = true">×</span>
+    `;
+    return;
+  }
+  if (getUsageCount() >= 50) return; // don't auto-burn calls if user is at limit
+
+  banner.hidden = false;
+  banner.classList.remove('error');
+  banner.innerHTML = `<span class="af-icon">⚡</span><span>Pulling subject record from Rentcast…</span>`;
+
+  try {
+    const record = await fetchSubjectRecord(address);
+    if (!record){
+      banner.classList.add('error');
+      banner.innerHTML = `
+        <span class="af-icon">⚠</span>
+        <span><strong>No Rentcast record found</strong> for this address. Fill the subject details manually — this happens often for new builds and unbuilt spec lots.</span>
+        <span class="af-dismiss" onclick="this.parentElement.hidden = true">×</span>
+      `;
+      return;
+    }
+    const result = applySubjectAutofill(record);
+    const wfNote = result.waterfrontConfidence === 'high'
+      ? `Waterfront detected as <strong>${result.waterfrontValue}</strong> (high-confidence match).`
+      : result.waterfrontConfidence === 'medium'
+        ? `Waterfront guess: <strong>${result.waterfrontValue}</strong> — please verify.`
+        : `Waterfront <strong>could not be detected</strong> — Rentcast doesn't have a dedicated flag. Set it manually if applicable.`;
+    banner.innerHTML = `
+      <span class="af-icon">⚡</span>
+      <span><strong>Autofilled ${result.filled} fields from Rentcast.</strong> Review before clicking Find Comps. ${wfNote}</span>
+      <span class="af-dismiss" onclick="this.parentElement.hidden = true">×</span>
+    `;
+  } catch (err){
+    banner.classList.add('error');
+    banner.innerHTML = `
+      <span class="af-icon">⚠</span>
+      <span>Couldn't autofill: ${err.message}</span>
+      <span class="af-dismiss" onclick="this.parentElement.hidden = true">×</span>
+    `;
+  }
+}
+
+/* ============================================================
+   FLOW: FIND COMPS
+   ============================================================ */
+async function onFindComps(){
+  if (!API_KEY){
+    openSettings();
+    showToast('Add your Rentcast API key to fetch comps');
+    return;
+  }
+  let subj = readSubject();
+  if (!subj.address){ showToast('No subject address set'); return; }
+
+  // If user edited the address, re-geocode and update map pin before fetching
+  if (subjectLocation && subj.address !== subjectLocation.address){
+    showLoading('Re-locating updated address…');
+    try {
+      const loc = await geocode(subj.address);
+      subjectLocation = { lat: loc.lat, lng: loc.lng, address: subj.address };
+      subj.lat = loc.lat;
+      subj.lng = loc.lng;
+      if (mapInstance){
+        mapInstance.setView([loc.lat, loc.lng], 15);
+        if (subjectMarker){ subjectMarker.setLatLng([loc.lat, loc.lng]); subjectMarker.setPopupContent(`<strong>Subject property</strong><br>${subj.address}`); }
+      }
+    } catch (err){
+      hideLoading();
+      showToast('Could not locate the updated address.');
+      return;
+    }
+  }
+
+  // Determine if we'll fetch the subject record this run.
+  // Skip if: setting is off OR user has already filled the key specs (sqft + beds + year).
+  const subjectAlreadyFilled = subj.sqft && subj.beds && subj.year;
+  const needsAutofill = autofillEnabled && !subjectAlreadyFilled;
+  const callCount = needsAutofill ? 2 : 1;
+
+  // If autofill is off, the subject sqft must be filled in already — we have no other source for it
+  if (!autofillEnabled && !subj.sqft){
+    showToast('Subject Living SF is required (autofill is off — fill it in or enable autofill in Settings)');
+    $('s_sqft').focus();
+    return;
+  }
+
+  if (getUsageCount() + callCount > 50){
+    if (!confirm(`This will use ${callCount} call${callCount > 1 ? 's' : ''} but you only have ${50 - getUsageCount()} left this month. Continue?`)) return;
+  }
+
+  subjectData = subj;
+  showLoading(needsAutofill
+    ? 'Fetching subject record + comps from Rentcast (2 calls)…'
+    : 'Fetching comps from Rentcast (1 call)…');
+
+  // Fire both in parallel. Subject fetch is best-effort — if it fails, comps still work.
+  const subjectPromise = needsAutofill
+    ? fetchSubjectRecord(subj.address).catch(err => { console.warn('Subject fetch failed:', err); return null; })
+    : Promise.resolve(null);
+  const compsPromise = fetchCompsFromRentcast(subj.address, {
+    radius: 2,       // wider default per user request
+    daysOld: 545,    // 18 months
+    compCount: 25
+  });
+
+  let subjectRecord, compsData;
+  try {
+    [subjectRecord, compsData] = await Promise.all([subjectPromise, compsPromise]);
+  } catch (err){
+    hideLoading();
+    showToast(err.message);
+    console.error(err);
+    return;
+  }
+
+  // Apply subject autofill if we got it — preserve any values the user already entered
+  let autofillResult = null;
+  if (subjectRecord){
+    autofillResult = applySubjectAutofill(subjectRecord, { preserveExisting: true });
+    showSubjectAutofillBanner(autofillResult, true);
+  } else if (needsAutofill){
+    showSubjectAutofillBanner(null, false);
+  }
+
+  // Re-read subject after autofill applied any new values
+  subjectData = readSubject();
+
+  if (!subjectData.sqft){
+    hideLoading();
+    showToast('Subject Living SF is required. Rentcast didn\'t have it — fill manually and click Find Comps again.');
+    $('s_sqft').focus();
+    return;
+  }
+
+  const comparables = compsData.comparables || compsData.comps || [];
+  if (!comparables.length){
+    hideLoading();
+    showToast('Rentcast returned 0 comps within 2 mi / 18 mo. Try a different address.');
+    return;
+  }
+
+  rawComps = comparables.map(c => normalizeRentcastComp(c, { lat: subjectData.lat, lng: subjectData.lng }));
+  lastSearchTier = {
+    tier: 'wide',
+    label: '2 mi · 18 mo',
+    radius: 2,
+    daysOld: 545,
+    qualifying: rawComps.filter(c => c.salePrice).length,
+    reason: null
+  };
+  rerank();
+  hideLoading();
+  collapseSubject(true);
+}
+
+function showSubjectAutofillBanner(result, found){
+  const banner = $('autofill-banner');
+  banner.hidden = false;
+  if (!found){
+    banner.classList.add('error');
+    banner.innerHTML = `
+      <span class="af-icon">⚠</span>
+      <span><strong>No Rentcast record for this address.</strong> Common for new builds or unbuilt spec lots — fill the subject details manually.</span>
+      <span class="af-dismiss" onclick="this.parentElement.hidden = true">×</span>
+    `;
+    return;
+  }
+  banner.classList.remove('error');
+  const wfNote = result.waterfrontConfidence === 'high'
+    ? `Waterfront: <strong>${result.waterfrontValue}</strong> (high-confidence).`
+    : result.waterfrontConfidence === 'medium' || result.waterfrontConfidence === 'low'
+      ? `Waterfront guess: <strong>${result.waterfrontValue}</strong> — verify.`
+      : result.waterfrontConfidence === 'kept'
+        ? `Kept your waterfront setting (<strong>${result.waterfrontValue}</strong>).`
+        : `Waterfront unknown — Rentcast has no flag for it. Set manually if applicable.`;
+  const skipNote = result.skipped > 0 ? ` Kept ${result.skipped} of your values unchanged.` : '';
+  banner.innerHTML = `
+    <span class="af-icon">⚡</span>
+    <span><strong>Autofilled ${result.filled} field${result.filled > 1 ? 's' : ''} from Rentcast.</strong>${skipNote} ${wfNote} Edit anything to instantly re-rank the comps.</span>
+    <span class="af-dismiss" onclick="this.parentElement.hidden = true">×</span>
+  `;
+}
+
+function rerank(){
+  const subj = subjectData;
+  const weights = readWeights();
+  // Preserve exclusion state when re-ranking
+  const prevExcluded = new Map(scoredComps.map(c => [c.address, c.excluded]));
+  scoredComps = rawComps
+    .map(c => {
+      const scored = scoreComp({ ...c }, subj, weights);
+      scored.excluded = prevExcluded.get(scored.address) || false;
+      return scored;
+    })
+    .sort((a, b) => b.similarity - a.similarity);
+
+  // Compute prompt-2 derivations
+  outlierStats = detectOutliers(scoredComps);
+  confidenceInfo = computeConfidence(scoredComps, subj);
+
+  renderResults();
+  addCompMarkers(scoredComps, { fit: true });
+}
+
+/* Recompute derived stats (outliers, confidence, ARV) without re-fetching.
+   Used when user toggles excluded/market-trend etc. */
+function recomputeDerived(){
+  outlierStats = detectOutliers(scoredComps);
+  confidenceInfo = computeConfidence(scoredComps, subjectData);
+  renderResults();
+  addCompMarkers(scoredComps);
+}
+
+/* ============================================================
+   UI: SETTINGS, COLLAPSE, ETC
+   ============================================================ */
+function openSettings(){
+  $('api-key-input').value = API_KEY;
+  $('gmaps-key-input').value = GMAPS_KEY;
+  $('autofill-toggle').checked = autofillEnabled;
+  updateKeyLen();
+  $('settings-modal').hidden = false;
+  setTimeout(() => $('api-key-input').focus(), 100);
+}
+function updateKeyLen(){
+  const v = $('api-key-input').value;
+  const el = $('api-key-len');
+  if (!el) return;
+  if (!v) el.textContent = '';
+  else if (v.length > 200) el.textContent = `· ${v.length} chars (suspicious — too long for an API key)`;
+  else el.textContent = `· ${v.length} chars`;
+}
+function closeSettings(){ $('settings-modal').hidden = true }
+function saveSettings(){
+  // Store exactly what's in the input — no transformation, no sanitization.
+  const k = $('api-key-input').value;
+  API_KEY = k;
+  if (k) localStorage.setItem('rentcast_api_key', k);
+  else localStorage.removeItem('rentcast_api_key');
+
+  // Google Maps key — also stored verbatim
+  const gk = $('gmaps-key-input').value;
+  GMAPS_KEY = gk;
+  if (gk) localStorage.setItem('gmaps_api_key', gk);
+  else localStorage.removeItem('gmaps_api_key');
+
+  // Persist autofill preference
+  autofillEnabled = $('autofill-toggle').checked;
+  localStorage.setItem('rentcast_autofill_enabled', autofillEnabled ? 'true' : 'false');
+
+  closeSettings();
+  const bits = [];
+  if (k) bits.push('Rentcast saved');
+  if (gk) bits.push('Maps key saved');
+  bits.push(`autofill ${autofillEnabled ? 'on' : 'off'}`);
+  showToast(bits.join(' · '));
+}
+
+function clearApiKey(){
+  $('api-key-input').value = '';
+  $('gmaps-key-input').value = '';
+  API_KEY = '';
+  GMAPS_KEY = '';
+  localStorage.removeItem('rentcast_api_key');
+  localStorage.removeItem('gmaps_api_key');
+  showToast('Both keys cleared');
+}
+
+function collapseSubject(collapsed){
+  const sec = $('subject-section');
+  const body = $('subject-body');
+  const btn = $('collapse-subject');
+  const findBtn = $('find-comps-btn');
+  if (collapsed){
+    body.style.display = 'none';
+    findBtn.style.display = 'none';
+    btn.textContent = '+';
+    btn.setAttribute('aria-expanded','false');
+    sec.classList.remove('expanded');
+    $('subject-head-title').innerHTML = `Subject · <span style="color:var(--text);font-weight:500;text-transform:none;letter-spacing:0;">${subjectData?.address || ''}</span>`;
+  } else {
+    body.style.display = '';
+    findBtn.style.display = '';
+    btn.textContent = '−';
+    btn.setAttribute('aria-expanded','true');
+    sec.classList.add('expanded');
+    $('subject-head-title').textContent = 'Subject property';
+  }
+}
+
+function toggleWeights(){
+  const body = $('weights-body');
+  const btn = $('collapse-weights');
+  const exp = btn.getAttribute('aria-expanded') === 'true';
+  if (exp){
+    body.hidden = true; btn.textContent = '+'; btn.setAttribute('aria-expanded','false');
+  } else {
+    body.hidden = false; btn.textContent = '−'; btn.setAttribute('aria-expanded','true');
+  }
+}
+
+function showLoading(text){
+  $('loader-text').textContent = text || 'Loading...';
+  $('loading-overlay').hidden = false;
+}
+function hideLoading(){ $('loading-overlay').hidden = true }
+
+function newSearch(){
+  // Reset state, return to hero
+  $('app').hidden = true;
+  $('app').classList.remove('visible');
+  $('hero').style.display = '';
+  $('hero').classList.remove('fading');
+  $('hero').style.opacity = '1';
+  $('hero-search').classList.remove('searching');
+  $('hero-address').value = '';
+  scoredComps = [];
+  rawComps = [];
+  subjectData = null;
+  subjectLocation = null;
+  lastSearchTier = null;
+  confidenceInfo = null;
+  outlierStats = null;
+  marketTrendOn = false;
+  autofilledFields = new Set();
+  waterfrontAutofilled = false;
+  $('trend-toggle-cb').checked = false;
+  $('trend-rate').disabled = true;
+  // Clear autofill highlights
+  document.querySelectorAll('.autofilled-field').forEach(el => {
+    el.classList.remove('autofilled-field','verify');
+  });
+  $('autofill-banner').hidden = true;
+  $('arv-section').hidden = true;
+  $('comps-section').hidden = true;
+  $('map-legend').hidden = true;
+  const viewBtn = $('view-subject-btn');
+  if (viewBtn) viewBtn.style.display = 'none';
+  collapseSubject(false);
+  // Re-init globe
+  setTimeout(() => Globe.init(), 100);
+}
+
+/* ============================================================
+   BINDINGS
+   ============================================================ */
+function bindEvents(){
+  // Hero
+  $('hero-address').addEventListener('keydown', e => {
+    if (e.key === 'Enter') onAddressEnter();
+  });
+  $('hero-settings-btn').addEventListener('click', openSettings);
+
+  // Hero — example chip click
+  document.querySelectorAll('.hero-example').forEach(el => {
+    el.addEventListener('click', () => {
+      $('hero-address').value = el.dataset.addr;
+      onAddressEnter();
+    });
+  });
+
+  // Hero — demo button
+  $('hero-demo-btn').addEventListener('click', loadDemo);
+
+  // Comp/Subject modal
+  $('comp-modal-x').addEventListener('click', closeDetailModal);
+  $('comp-modal-close').addEventListener('click', closeDetailModal);
+  $('comp-modal-backdrop').addEventListener('click', closeDetailModal);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !$('comp-modal').hidden) closeDetailModal();
+  });
+
+  // View subject button
+  $('view-subject-btn').addEventListener('click', () => {
+    if (!subjectLocation) return;
+    const s = readSubject();
+    openDetailModal({
+      kind: 'subject',
+      address: s.address,
+      lat: subjectLocation.lat,
+      lng: subjectLocation.lng,
+      sqft: s.sqft,
+      beds: s.beds, baths: s.baths,
+      year: s.year,
+      lot: s.lot,
+      stories: s.stories,
+      garage: s.garage,
+      waterfront: s.waterfront,
+      density: s.density,
+      pool: s.pool
+    });
+  });
+
+  // Hero — PDF dropzone (click + drag/drop)
+  const pdfZone = $('hero-pdf');
+  const pdfInput = $('hero-pdf-input');
+  pdfZone.addEventListener('click', () => pdfInput.click());
+  pdfInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) onPDFEntered(file);
+    pdfInput.value = ''; // allow re-selecting same file
+  });
+  ['dragenter','dragover'].forEach(ev => {
+    pdfZone.addEventListener(ev, e => {
+      e.preventDefault(); e.stopPropagation();
+      pdfZone.classList.add('drag');
+    });
+  });
+  ['dragleave','drop'].forEach(ev => {
+    pdfZone.addEventListener(ev, e => {
+      e.preventDefault(); e.stopPropagation();
+      pdfZone.classList.remove('drag');
+    });
+  });
+  pdfZone.addEventListener('drop', e => {
+    const file = e.dataTransfer.files[0];
+    if (file) onPDFEntered(file);
+  });
+  // Prevent the page from navigating away if user drops the PDF outside the zone
+  ['dragover','drop'].forEach(ev => {
+    document.addEventListener(ev, e => { e.preventDefault(); });
+  });
+
+  // App header
+  $('settings-btn').addEventListener('click', openSettings);
+  $('new-search-btn').addEventListener('click', () => {
+    if (confirm('Start a new search? Current results will be cleared.')) newSearch();
+  });
+
+  // Settings modal
+  $('settings-save').addEventListener('click', saveSettings);
+  $('settings-cancel').addEventListener('click', closeSettings);
+  $('settings-x').addEventListener('click', closeSettings);
+  $('settings-clear-key').addEventListener('click', () => {
+    clearApiKey();
+    updateKeyLen();
+  });
+  $('api-key-input').addEventListener('input', updateKeyLen);
+  $('settings-reset').addEventListener('click', () => {
+    if (confirm('Reset the usage counter for this month?')){
+      resetUsage();
+      showToast('Counter reset');
+    }
+  });
+  $('modal-backdrop').addEventListener('click', closeSettings);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !$('settings-modal').hidden) closeSettings();
+  });
+
+  // Subject
+  $('collapse-subject').addEventListener('click', () => {
+    const exp = $('collapse-subject').getAttribute('aria-expanded') === 'true';
+    collapseSubject(exp);
+  });
+  $('find-comps-btn').addEventListener('click', onFindComps);
+
+  // Auto-rerank when subject form changes (no new API call — just re-scores existing comps)
+  let rerankTimer = null;
+  const triggerRerank = () => {
+    if (!scoredComps.length) return; // no comps yet
+    clearTimeout(rerankTimer);
+    rerankTimer = setTimeout(() => {
+      // Update subjectData with current form values and re-score
+      subjectData = readSubject();
+      rerank();
+    }, 250);
+  };
+  $('subject-body').addEventListener('input', triggerRerank);
+  $('subject-body').addEventListener('change', triggerRerank);
+
+  // Weights
+  $('collapse-weights').addEventListener('click', toggleWeights);
+  $('weights-reset').addEventListener('click', () => {
+    setWeights(DEFAULT_WEIGHTS);
+    showToast('Weights reset to defaults');
+  });
+  $('weights-apply').addEventListener('click', () => {
+    if (scoredComps.length === 0){ showToast('Run a search first'); return; }
+    rerank();
+    showToast('Re-ranked with new weights');
+  });
+
+  // Market trend toggle
+  $('trend-toggle-cb').addEventListener('change', e => {
+    marketTrendOn = e.target.checked;
+    $('trend-rate').disabled = !marketTrendOn;
+    if (scoredComps.length) renderResults();
+  });
+  $('trend-rate').addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    if (!isNaN(v)){
+      marketTrendRate = v;
+      if (marketTrendOn && scoredComps.length) renderResults();
+    }
+  });
+
+  // Waterfront — when user touches it, clear the "verify" badge (they've reviewed)
+  $('s_waterfront').addEventListener('change', () => {
+    $('ff_waterfront')?.classList.remove('verify');
+  });
+
+  // Export
+  $('export-btn').addEventListener('click', exportToExcel);
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+function init(){
+  bindEvents();
+  renderUsage();
+  Globe.init();
+}
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
