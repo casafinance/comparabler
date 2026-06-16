@@ -711,10 +711,7 @@
   }
 
   /* Comps table */
-  .comps-table-wrap{ padding:4px 8px 12px; overflow-x:auto }
-  .comps-table-wrap::-webkit-scrollbar{ height:6px }
-  .comps-table-wrap::-webkit-scrollbar-track{ background:transparent }
-  .comps-table-wrap::-webkit-scrollbar-thumb{ background:var(--border);border-radius:3px }
+  .results-section.collapsed .section-head{ border-bottom:none }
 
   /* Comp detail modal */
   .comp-modal-card{
@@ -821,31 +818,67 @@
   /* Clickable comp rows */
   .comps-table tbody tr{ cursor:pointer }
   .comps-table tbody tr td.ex-cell{ cursor:default }
+  /* Scroll container: visible scrollbar + edge gradient hint */
+  .comps-table-wrap{
+    padding:0;
+    overflow-x:auto;
+    overflow-y:hidden;
+    position:relative;
+    /* Vertical "more →" hint on the right edge — only visible when content overflows */
+    background:
+      linear-gradient(to right, var(--surface) 30%, transparent),
+      linear-gradient(to right, transparent, var(--surface) 70%) 100% 0,
+      radial-gradient(farthest-side at 0 50%, rgba(0,0,0,0.4), transparent),
+      radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,0.4), transparent) 100% 0;
+    background-repeat:no-repeat;
+    background-size:40px 100%, 40px 100%, 14px 100%, 14px 100%;
+    background-attachment:local, local, scroll, scroll;
+    scroll-behavior:smooth;
+  }
+  .comps-table-wrap::-webkit-scrollbar{ height:10px }
+  .comps-table-wrap::-webkit-scrollbar-track{
+    background:var(--surface-3);
+    border-radius:5px;
+    margin:0 4px;
+  }
+  .comps-table-wrap::-webkit-scrollbar-thumb{
+    background:var(--border);
+    border-radius:5px;
+    border:2px solid var(--surface-3);
+  }
+  .comps-table-wrap::-webkit-scrollbar-thumb:hover{ background:var(--gold) }
+  .comps-table-wrap{ scrollbar-color: var(--border) var(--surface-3); scrollbar-width: thin }
+
   .comps-table{
     width:100%;
-    border-collapse:collapse;
+    border-collapse:separate;
+    border-spacing:0;
     font-size:12px;
     font-variant-numeric:tabular-nums;
+    min-width:1000px;
   }
   .comps-table th{
     text-align:left;
-    padding:10px 8px;
+    padding:12px 10px;
     font-size:10px;
     font-weight:600;
     letter-spacing:0.08em;
     text-transform:uppercase;
     color:var(--text-muted);
-    border-bottom:1px solid var(--border-soft);
-    position:sticky;top:0;
+    border-bottom:1px solid var(--border);
+    position:sticky;
+    top:0;
     background:var(--surface);
     user-select:none;
+    white-space:nowrap;
+    z-index:2;
   }
   .comps-table th.sortable{
     cursor:pointer;
     transition:color .15s, background .15s;
   }
   .comps-table th.sortable:hover{
-    color:var(--text);
+    color:var(--gold);
     background:var(--surface-2);
   }
   .sort-arrow{
@@ -856,21 +889,73 @@
     transition:opacity .15s;
   }
   .comps-table th.sortable:hover .sort-arrow{ opacity:0.7 }
-  .sort-arrow.active{
-    color:var(--gold);
-    opacity:1;
-  }
+  .sort-arrow.active{ color:var(--gold); opacity:1 }
+
   .comps-table td{
-    padding:10px 8px;
+    padding:11px 10px;
     border-bottom:1px solid var(--border-soft);
     color:var(--text-dim);
+    background:var(--surface);
+    white-space:nowrap;
   }
   .comps-table tr:last-child td{ border-bottom:none }
-  .comps-table tr:hover td{ background:var(--surface-2) }
+  .comps-table tbody tr{ transition:background .12s }
+  .comps-table tbody tr:hover td{ background:var(--surface-2) }
   .comps-table tr.excluded td{ opacity:0.35;text-decoration:line-through }
   .comps-table td.imp{ color:var(--gold);font-weight:500 }
-  .rank-cell{ color:var(--text-muted);font-weight:600;width:24px }
-  .addr-cell{ color:var(--text);min-width:240px;max-width:320px }
+
+  /* Right-align numeric columns for clean number reading */
+  .comps-table td.price-cell,
+  .comps-table td.mono,
+  .comps-table td.imp,
+  .comps-table td.rank-cell{ text-align:right }
+  .comps-table th.sortable[data-sort="salePrice"],
+  .comps-table th.sortable[data-sort="pricePerSqft"],
+  .comps-table th.sortable[data-sort="implied"],
+  .comps-table th.sortable[data-sort="sqft"],
+  .comps-table th.sortable[data-sort="yearBuilt"],
+  .comps-table th.sortable[data-sort="distance"],
+  .comps-table th.sortable[data-sort="monthsAgo"],
+  .comps-table th.sortable[data-sort="rank"]{ text-align:right }
+
+  /* STICKY LEFT COLUMNS — ex-cell, #, Address always visible during horizontal scroll */
+  .comps-table th:nth-child(1),
+  .comps-table td:nth-child(1){
+    position:sticky;
+    left:0;
+    z-index:3;
+    background:var(--surface);
+    width:38px;
+    min-width:38px;
+  }
+  .comps-table thead th:nth-child(1){ z-index:4 }
+  .comps-table th:nth-child(2),
+  .comps-table td:nth-child(2){
+    position:sticky;
+    left:38px;
+    z-index:3;
+    background:var(--surface);
+    width:36px;
+    min-width:36px;
+  }
+  .comps-table thead th:nth-child(2){ z-index:4 }
+  .comps-table th:nth-child(3),
+  .comps-table td:nth-child(3){
+    position:sticky;
+    left:74px;
+    z-index:3;
+    background:var(--surface);
+    /* Add a subtle right border so the sticky section is visually distinct from the scrollable area */
+    box-shadow:1px 0 0 var(--border-soft);
+  }
+  .comps-table thead th:nth-child(3){ z-index:4 }
+  /* Restore hover background on sticky cells */
+  .comps-table tbody tr:hover td:nth-child(1),
+  .comps-table tbody tr:hover td:nth-child(2),
+  .comps-table tbody tr:hover td:nth-child(3){ background:var(--surface-2) }
+
+  .rank-cell{ color:var(--text-muted);font-weight:600 }
+  .addr-cell{ color:var(--text);min-width:260px;max-width:340px }
   .addr-cell .addr-sub{ color:var(--text-muted);font-size:10px;margin-top:2px }
   .addr-row{ display:flex;gap:10px;align-items:center }
   .addr-thumb{
