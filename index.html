@@ -2146,14 +2146,12 @@ const Globe = (function(){
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(w, h);
     renderer.setClearColor(0x000000, 0);
-    // Modern color pipeline — makes the texture colors render with proper saturation/brightness.
-    // Cover both old (r128) and new (r152+) API names so this works regardless of which Three.js
-    // version is loaded by the script tag.
+    // Modern color pipeline — proper color rendering, no over-brightening
     if ('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace || 'srgb';
     else if ('outputEncoding' in renderer) renderer.outputEncoding = THREE.sRGBEncoding || 3001;
     if (THREE.ACESFilmicToneMapping) {
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.25; // slightly hot — punchy & bright
+      renderer.toneMappingExposure = 1.0; // neutral — not pumped up
     }
 
     // Starfield background
@@ -2191,91 +2189,99 @@ const Globe = (function(){
     sphere = new THREE.Mesh(geo, mat);
     scene.add(sphere);
 
-    // Try to load a real Earth texture. Multiple fallback URLs in case any CDN blocks.
+    // Progressive texture loading — Google-Earth-style:
+    //   1. Load a 2K texture instantly so the globe appears immediately, no blank period
+    //   2. In parallel, fetch the 8K NASA Blue Marble — when it arrives, swap it in seamlessly
+    //   3. Bump map (topology) layers in regardless of which color texture is active
     const textureLoader = new THREE.TextureLoader();
     textureLoader.crossOrigin = 'anonymous';
-    // Get max anisotropy supported by the GPU — sharper textures at oblique angles
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
-    const textureUrls = [
-      // NASA Blue Marble high-res (8K source, served via three-globe package) — highest quality, primary
-      'https://unpkg.com/three-globe@2.32.0/example/img/earth-blue-marble.jpg',
-      // Three-globe day texture (4K) — backup
-      'https://unpkg.com/three-globe@2.32.0/example/img/earth-day.jpg',
-      // jsdelivr mirror of three-globe assets
-      'https://cdn.jsdelivr.net/gh/vasturiano/three-globe/example/img/earth-blue-marble.jpg',
-      // Three.js examples fallback (2K) — last resort
-      'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
-      'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_atmos_2048.jpg',
-    ];
-    let urlIdx = 0;
-    const tryTexture = () => {
-      if (urlIdx >= textureUrls.length){
-        console.warn('[globe] All Earth texture sources failed. Using wireframe fallback.');
+
+    // Apply a color texture to the globe material. Won't downgrade if higher-res is already in place.
+    const applyEarthTexture = (tex, label) => {
+      if (mat.map && mat.map.image && tex.image && mat.map.image.width >= tex.image.width){
+        console.log('[globe] Skipping', label, '— higher-res already applied');
         return;
       }
-      const url = textureUrls[urlIdx];
-      console.log('[globe] Trying texture:', url);
-      textureLoader.load(
-        url,
-        (tex) => {
-          console.log('[globe] Texture loaded successfully:', url, `(${tex.image.width}×${tex.image.height})`);
-          // Sharpen at oblique camera angles (where the globe surface is nearly edge-on at the limb)
-          tex.anisotropy = maxAniso;
-          // Smooth interpolation (no nearest-neighbor pixelation)
-          tex.minFilter = THREE.LinearMipmapLinearFilter;
-          tex.magFilter = THREE.LinearFilter;
-          tex.generateMipmaps = true;
-          // Color space — modern three.js uses sRGB by default for textures meant as color maps
-          if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace || 'srgb';
-          else if ('encoding' in tex) tex.encoding = THREE.sRGBEncoding || 3001;
-          mat.map = tex;
-          // White color tint means the texture renders at its FULL brightness — no blue-grey wash
-          mat.color.setHex(0xFFFFFF);
-          mat.emissive.setHex(0x1A2440); // slight self-illumination so the night side isn't pitch black
-          mat.emissiveIntensity = 0.4;
-          mat.needsUpdate = true;
+      console.log(`[globe] Applying ${label} (${tex.image.width}×${tex.image.height})`);
+      tex.anisotropy = maxAniso;
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.generateMipmaps = true;
+      if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace || 'srgb';
+      else if ('encoding' in tex) tex.encoding = THREE.sRGBEncoding || 3001;
+      mat.map = tex;
+      // Subtle tint — pulls the texture down slightly so the bright continents don't overpower hero text
+      mat.color.setHex(0xD8E0F0);
+      mat.emissive.setHex(0x101828);
+      mat.emissiveIntensity = 0.25;
+      mat.needsUpdate = true;
+    };
 
-          // Try to add a bump map (topology) for visible terrain relief — makes mountains/coastlines
-          // pop without needing a higher-res color texture. Optional; failure is silent.
-          const bumpLoader = new THREE.TextureLoader();
-          bumpLoader.crossOrigin = 'anonymous';
-          bumpLoader.load(
-            'https://unpkg.com/three-globe@2.32.0/example/img/earth-topology.png',
-            (bump) => {
-              bump.anisotropy = maxAniso;
-              mat.bumpMap = bump;
-              mat.bumpScale = 0.018;
-              mat.needsUpdate = true;
-              console.log('[globe] Bump map loaded');
-            },
-            undefined,
-            () => { /* no bump — that's OK */ }
-          );
-        },
+    // STAGE 1 — 2K, fast first paint
+    const lowResUrls = [
+      'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
+      'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_atmos_2048.jpg'
+    ];
+    const tryLowRes = (i = 0) => {
+      if (i >= lowResUrls.length) return;
+      textureLoader.load(lowResUrls[i],
+        (tex) => applyEarthTexture(tex, '2K initial'),
         undefined,
-        (err) => {
-          console.warn('[globe] Texture failed:', url, err);
-          urlIdx++;
-          tryTexture();
-        }
+        () => tryLowRes(i + 1)
       );
     };
-    tryTexture();
+    tryLowRes();
 
-    // Lighting — brighter, with a hemisphere light for nice sky/ground ambient gradient
-    const ambient = new THREE.AmbientLight(0x6878A0, 1.0);
+    // STAGE 2 — HD swap. Runs in parallel with stage 1, doesn't block first paint.
+    const hiResUrls = [
+      'https://unpkg.com/three-globe@2.32.0/example/img/earth-blue-marble.jpg',
+      'https://cdn.jsdelivr.net/gh/vasturiano/three-globe/example/img/earth-blue-marble.jpg',
+      'https://unpkg.com/three-globe@2.32.0/example/img/earth-day.jpg'
+    ];
+    const tryHiRes = (i = 0) => {
+      if (i >= hiResUrls.length){
+        console.warn('[globe] HD texture sources failed. Sticking with 2K.');
+        return;
+      }
+      console.log('[globe] Background HD fetch:', hiResUrls[i]);
+      textureLoader.load(hiResUrls[i],
+        (tex) => applyEarthTexture(tex, 'HD'),
+        undefined,
+        () => tryHiRes(i + 1)
+      );
+    };
+    tryHiRes();
+
+    // Bump map (topology) — loaded independently for surface relief
+    const bumpLoader = new THREE.TextureLoader();
+    bumpLoader.crossOrigin = 'anonymous';
+    bumpLoader.load(
+      'https://unpkg.com/three-globe@2.32.0/example/img/earth-topology.png',
+      (bump) => {
+        bump.anisotropy = maxAniso;
+        mat.bumpMap = bump;
+        mat.bumpScale = 0.015;
+        mat.needsUpdate = true;
+        console.log('[globe] Bump map loaded — surface relief active');
+      },
+      undefined,
+      () => { /* no bump map is fine */ }
+    );
+
+    // Lighting — calibrated so the globe is visible but doesn't overpower the hero text on top of it
+    const ambient = new THREE.AmbientLight(0x4A5878, 0.65);
     scene.add(ambient);
-    // Hemisphere light: blue sky tint on top, warmer earth tint on bottom — adds natural feel
     if (THREE.HemisphereLight){
-      const hemi = new THREE.HemisphereLight(0xB8D4FF, 0x4A3520, 0.55);
+      const hemi = new THREE.HemisphereLight(0x88A8C8, 0x3A2818, 0.35);
       scene.add(hemi);
     }
-    // Key light — warm sun coming from above-right
-    const dir = new THREE.DirectionalLight(0xFFE8C0, 1.6);
+    // Key light — warm sun
+    const dir = new THREE.DirectionalLight(0xFFE4B3, 1.1);
     dir.position.set(3, 2, 4);
     scene.add(dir);
-    // Cool fill from behind-left to keep dark side visible
-    const dir2 = new THREE.DirectionalLight(0x9CB8DC, 0.7);
+    // Cool fill — subtle, keeps night side visible without washing scene
+    const dir2 = new THREE.DirectionalLight(0x88A8D0, 0.45);
     dir2.position.set(-3, -1, -2);
     scene.add(dir2);
 
