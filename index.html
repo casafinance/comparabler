@@ -2110,6 +2110,7 @@ const Globe = (function(){
   let scene, camera, renderer, sphere, wireGroup, atmosphere, pointsGroup;
   let animationId = null;
   let isTransitioning = false;
+  let isLocked = false; // once a zoom-to-location finishes, lock the globe — no more drift
   let transitionStart = 0;
   let transitionDuration = 2600;
   let qStart = null;
@@ -2184,14 +2185,18 @@ const Globe = (function(){
     // Try to load a real Earth texture. Multiple fallback URLs in case any CDN blocks.
     const textureLoader = new THREE.TextureLoader();
     textureLoader.crossOrigin = 'anonymous';
+    // Get max anisotropy supported by the GPU — sharper textures at oblique angles
+    const maxAniso = renderer.capabilities.getMaxAnisotropy();
     const textureUrls = [
-      // threejs.org examples — well-known to serve CORS headers
+      // NASA Blue Marble high-res (8K source, served via three-globe package) — highest quality, primary
+      'https://unpkg.com/three-globe@2.32.0/example/img/earth-blue-marble.jpg',
+      // Three-globe day texture (4K) — backup
+      'https://unpkg.com/three-globe@2.32.0/example/img/earth-day.jpg',
+      // jsdelivr mirror of three-globe assets
+      'https://cdn.jsdelivr.net/gh/vasturiano/three-globe/example/img/earth-blue-marble.jpg',
+      // Three.js examples fallback (2K) — last resort
       'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
-      // jsdelivr serving the same texture from github (also CORS-enabled)
       'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_atmos_2048.jpg',
-      // unpkg three-globe textures
-      'https://unpkg.com/three-globe@2.32.0/example/img/earth-dark.jpg',
-      'https://unpkg.com/three-globe@2.32.0/example/img/earth-blue-marble.jpg'
     ];
     let urlIdx = 0;
     const tryTexture = () => {
@@ -2204,7 +2209,16 @@ const Globe = (function(){
       textureLoader.load(
         url,
         (tex) => {
-          console.log('[globe] Texture loaded successfully:', url);
+          console.log('[globe] Texture loaded successfully:', url, `(${tex.image.width}×${tex.image.height})`);
+          // Sharpen at oblique camera angles (where the globe surface is nearly edge-on at the limb)
+          tex.anisotropy = maxAniso;
+          // Smooth interpolation (no nearest-neighbor pixelation)
+          tex.minFilter = THREE.LinearMipmapLinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          tex.generateMipmaps = true;
+          // Color space — modern three.js uses sRGB by default for textures meant as color maps
+          if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace || 'srgb';
+          else if ('encoding' in tex) tex.encoding = THREE.sRGBEncoding || 3001;
           mat.map = tex;
           mat.color.setHex(0x9CB0D8); // brighter so texture is visible
           mat.emissive.setHex(0x0A1020);
@@ -2373,11 +2387,15 @@ const Globe = (function(){
       }
       if (t >= 1){
         isTransitioning = false;
+        isLocked = true; // ← lock so the idle rotation below doesn't drift the globe afterwards
+        // Snap exactly to the target quaternion to eliminate any tiny floating-point overshoot
+        sphere.quaternion.copy(qTarget);
         if (onTransitionDone){ const cb = onTransitionDone; onTransitionDone = null; cb(); }
       }
-    } else {
+    } else if (!isLocked) {
       // Idle rotation — small Y-axis rotation each frame, applied via quaternion.
       // wireGroup and pointsGroup are children so they rotate with sphere.
+      // Skipped once isLocked is true (i.e. after a zoom-to-location completes).
       sphere.rotateY(0.0010);
     }
     renderer.render(scene, camera);
