@@ -2178,13 +2178,13 @@ const Globe = (function(){
     const stars = new THREE.Points(starGeo, starMat);
     scene.add(stars);
 
-    // Main sphere — higher poly count for smooth silhouette + crisp texture mapping at the limb
+    // Main sphere — high-poly for smooth silhouette + low shininess to avoid harsh specular glare on oceans
     const geo = new THREE.SphereGeometry(1, 128, 128);
     const mat = new THREE.MeshPhongMaterial({
       color: 0x1A2540,
       emissive: 0x121C2E,
-      shininess: 18,
-      specular: 0x3A4C78
+      shininess: 3,           // very low — kills hot specular spots that read as "white glare"
+      specular: 0x141C2E       // dim specular color, almost black
     });
     sphere = new THREE.Mesh(geo, mat);
     scene.add(sphere);
@@ -2269,21 +2269,27 @@ const Globe = (function(){
       () => { /* no bump map is fine */ }
     );
 
-    // Lighting — calibrated so the globe is visible but doesn't overpower the hero text on top of it
-    const ambient = new THREE.AmbientLight(0x4A5878, 0.65);
+    // Lighting — "earth from space" mood. The sun is behind the planet, casting rim light through
+    // the atmosphere onto the silhouette. The front (facing camera) is lit only by soft ambient,
+    // so there's no bright white hotspot washing out the texture or the hero text above it.
+    const ambient = new THREE.AmbientLight(0x404D6A, 0.55);
     scene.add(ambient);
     if (THREE.HemisphereLight){
-      const hemi = new THREE.HemisphereLight(0x88A8C8, 0x3A2818, 0.35);
+      // Subtle sky/ground tint gradient — feels more natural than ambient alone
+      const hemi = new THREE.HemisphereLight(0x6080A8, 0x1F1814, 0.3);
       scene.add(hemi);
     }
-    // Key light — warm sun
-    const dir = new THREE.DirectionalLight(0xFFE4B3, 1.1);
-    dir.position.set(3, 2, 4);
-    scene.add(dir);
-    // Cool fill — subtle, keeps night side visible without washing scene
-    const dir2 = new THREE.DirectionalLight(0x88A8D0, 0.45);
-    dir2.position.set(-3, -1, -2);
-    scene.add(dir2);
+    // SUN — positioned BEHIND the globe (negative Z), slightly above and to the upper-left.
+    // From the camera's POV this lights the back-left of the planet → terminator visible on the
+    // upper-left edge and a warm rim that interacts with the gold atmosphere shader.
+    const sun = new THREE.DirectionalLight(0xFFE0B0, 2.4);
+    sun.position.set(-2.5, 1.5, -3.5);
+    scene.add(sun);
+    // Tiny FRONT FILL — extremely subtle cool light from camera direction, just enough to lift
+    // texture detail on the night side without recreating the "white spot" problem.
+    const front = new THREE.DirectionalLight(0x6F88B2, 0.25);
+    front.position.set(0.5, 0, 4);
+    scene.add(front);
 
     // Wireframe grid — brighter, more visible. Added as child of sphere so it inherits rotation.
     wireGroup = new THREE.Group();
@@ -2355,7 +2361,7 @@ const Globe = (function(){
     // Atmospheric glow — stronger, more visible
     const atmoGeo = new THREE.SphereGeometry(1.22, 64, 64);
     const atmoMat = new THREE.ShaderMaterial({
-      uniforms: { c:{value:0.5}, p:{value:3.2}, glowColor:{value:new THREE.Color(0xF5C76A)} },
+      uniforms: { c:{value:0.55}, p:{value:3.0}, glowColor:{value:new THREE.Color(0xF5C76A)} },
       vertexShader: `
         varying vec3 vNormal;
         void main(){
@@ -2370,7 +2376,7 @@ const Globe = (function(){
         varying vec3 vNormal;
         void main(){
           float intensity = pow(c - dot(vNormal, vec3(0.0, 0.0, 1.0)), p);
-          gl_FragColor = vec4(glowColor, 1.0) * intensity * 0.7;
+          gl_FragColor = vec4(glowColor, 1.0) * intensity * 0.85;
         }
       `,
       side: THREE.BackSide,
