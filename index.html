@@ -398,6 +398,29 @@
     object-fit:cover;
     background:var(--surface-3);
     border-bottom:1px solid var(--border-soft);
+    transition:opacity .15s;
+  }
+  .popup-svthumb:hover{ opacity:0.85 }
+  .popup-open-btn{
+    display:block;
+    width:100%;
+    margin-top:10px;
+    padding:8px 12px;
+    background:var(--gold);
+    color:#0A0F1C;
+    border:none;
+    border-radius:4px;
+    font-size:12px;
+    font-weight:600;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+    cursor:pointer;
+    font-family:inherit;
+    transition:all .15s;
+  }
+  .popup-open-btn:hover{
+    background:#FFD685;
+    box-shadow:0 4px 12px -4px var(--gold-glow);
   }
 
   .map-legend{
@@ -815,6 +838,27 @@
     border-bottom:1px solid var(--border-soft);
     position:sticky;top:0;
     background:var(--surface);
+    user-select:none;
+  }
+  .comps-table th.sortable{
+    cursor:pointer;
+    transition:color .15s, background .15s;
+  }
+  .comps-table th.sortable:hover{
+    color:var(--text);
+    background:var(--surface-2);
+  }
+  .sort-arrow{
+    display:inline-block;
+    margin-left:4px;
+    font-size:9px;
+    opacity:0.35;
+    transition:opacity .15s;
+  }
+  .comps-table th.sortable:hover .sort-arrow{ opacity:0.7 }
+  .sort-arrow.active{
+    color:var(--gold);
+    opacity:1;
   }
   .comps-table td{
     padding:10px 8px;
@@ -1600,6 +1644,8 @@ let subjectMarker = null;
 let subjectLocation = null; // {lat, lng, address}
 let subjectData = null;     // full subject from form
 let scoredComps = [];       // [{...comp, similarity, excluded}]
+let compSortKey = 'rank';    // current sort column
+let compSortDir = 'asc';     // 'asc' or 'desc'
 let rawComps = [];          // original API rows
 
 // New state for prompt-2 features
@@ -2294,8 +2340,10 @@ function addCompMarkers(comps, opts={}){
     const distTxt = c.distance != null ? c.distance.toFixed(2) + ' mi' : '—';
     // Street View thumbnail — only when a Google Maps key is configured. The Static Street View
     // API costs the same quota as the JS API but returns a static JPG we can use as an img src.
+    // Both the thumbnail and the button below open the interactive Street View modal on click.
+    const compIdx = i;
     const svThumb = GMAPS_KEY
-      ? `<img class="popup-svthumb" src="https://maps.googleapis.com/maps/api/streetview?size=300x140&location=${c.lat},${c.lng}&fov=80&pitch=0&source=outdoor&key=${encodeURIComponent(GMAPS_KEY)}" onerror="this.style.display='none'" />`
+      ? `<img class="popup-svthumb" src="https://maps.googleapis.com/maps/api/streetview?size=300x140&location=${c.lat},${c.lng}&fov=80&pitch=0&source=outdoor&key=${encodeURIComponent(GMAPS_KEY)}" onerror="this.style.display='none'" onclick="window._openCompModal(${compIdx})" style="cursor:pointer" />`
       : '';
     m.bindPopup(`
       ${svThumb}
@@ -2306,6 +2354,7 @@ function addCompMarkers(comps, opts={}){
         Sold ${c.saleDate ? new Date(c.saleDate).toLocaleDateString() : '—'} · ${distTxt}<br>
         Similarity: <strong>${c.similarity}</strong>
       </div>
+      <button class="popup-open-btn" onclick="window._openCompModal(${compIdx})">↗ Open Street View</button>
     `, { maxWidth: 320 });
     mapMarkers.push(m);
     bounds.push([c.lat, c.lng]);
@@ -2970,8 +3019,30 @@ function renderResults(){
   $('comps-count').textContent = scoredComps.length;
   $('comps-section').hidden = false;
   const mean = outlierStats?.mean;
+
+  // Build a sorted view of scoredComps based on the active sort column. We keep the original
+  // index attached so outlier checks, excluded state, and exclude-checkbox bindings still match
+  // the underlying scoredComps array (which is what gets edited by exclusion + re-exported).
+  const sortedView = scoredComps.map((c, i) => ({ c, i })).sort((a, b) => {
+    const dir = compSortDir === 'asc' ? 1 : -1;
+    let av, bv;
+    if (compSortKey === 'rank'){ av = a.i; bv = b.i; }
+    else if (compSortKey === 'implied'){
+      av = (a.c.pricePerSqft && subj.sqft) ? a.c.pricePerSqft * subj.sqft : null;
+      bv = (b.c.pricePerSqft && subj.sqft) ? b.c.pricePerSqft * subj.sqft : null;
+    }
+    else { av = a.c[compSortKey]; bv = b.c[compSortKey]; }
+    // Push null/undefined to the end regardless of direction
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (av < bv) return -1 * dir;
+    if (av > bv) return 1 * dir;
+    return 0;
+  });
+
   let rows = '';
-  scoredComps.forEach((c, i) => {
+  sortedView.forEach(({ c, i }) => {
     const implied = (c.pricePerSqft && subj.sqft) ? c.pricePerSqft * subj.sqft : null;
     const isOutlier = outlierStats?.indices.has(i);
     let outlierTip = '';
@@ -3024,17 +3095,49 @@ function renderResults(){
     `;
   });
   const ppsfHeader = marketTrendOn ? '$/SF raw → adj' : '$/SF';
+  // Sort indicator for the active column
+  const sortArrow = (key) => {
+    if (compSortKey !== key) return '<span class="sort-arrow">↕</span>';
+    return `<span class="sort-arrow active">${compSortDir === 'desc' ? '▼' : '▲'}</span>`;
+  };
   $('comps-table-wrap').innerHTML = `
     <table class="comps-table">
       <thead>
         <tr>
-          <th></th><th>#</th><th>Address</th><th>Sim</th><th>Sale</th><th>${ppsfHeader}</th>
-          <th>Implied</th><th>SF</th><th>Bd/Ba</th><th>Year</th><th>Dist</th><th>Sold</th>
+          <th></th>
+          <th class="sortable" data-sort="rank">#${sortArrow('rank')}</th>
+          <th>Address</th>
+          <th class="sortable" data-sort="similarity">Sim${sortArrow('similarity')}</th>
+          <th class="sortable" data-sort="salePrice">Sale${sortArrow('salePrice')}</th>
+          <th class="sortable" data-sort="pricePerSqft">${ppsfHeader}${sortArrow('pricePerSqft')}</th>
+          <th class="sortable" data-sort="implied">Implied${sortArrow('implied')}</th>
+          <th class="sortable" data-sort="sqft">SF${sortArrow('sqft')}</th>
+          <th>Bd/Ba</th>
+          <th class="sortable" data-sort="yearBuilt">Year${sortArrow('yearBuilt')}</th>
+          <th class="sortable" data-sort="distance">Dist${sortArrow('distance')}</th>
+          <th class="sortable" data-sort="monthsAgo">Sold${sortArrow('monthsAgo')}</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
   `;
+  // Wire header clicks for sorting
+  document.querySelectorAll('.comps-table th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (compSortKey === key){
+        // Same column — toggle direction
+        compSortDir = compSortDir === 'desc' ? 'asc' : 'desc';
+      } else {
+        // New column — default direction based on what makes sense for that field
+        compSortKey = key;
+        // Default DESC for: similarity, salePrice, pricePerSqft, implied, sqft, yearBuilt (newer first)
+        // Default ASC for: rank (1 first), distance (closest first), monthsAgo (most recent first)
+        compSortDir = ['rank', 'distance', 'monthsAgo'].includes(key) ? 'asc' : 'desc';
+      }
+      renderResults();
+    });
+  });
   // Wire exclusion checkboxes
   document.querySelectorAll('.ex-cb').forEach(cb => {
     cb.addEventListener('change', (e) => {
@@ -3065,42 +3168,51 @@ function renderResults(){
     tr.addEventListener('click', (e) => {
       if (e.target.tagName === 'INPUT') return;
       const idx = +tr.dataset.row;
-      const c = scoredComps[idx];
-      if (!c || c.lat == null) {
-        // No coords — fall back to just panning the main map
-        const m = mapMarkers[idx];
-        if (m){ m.openPopup(); mapInstance.panTo(m.getLatLng()); }
-        return;
-      }
-      // Compute outlier info
-      const isOutlier = outlierStats?.indices.has(idx);
-      let outlierTip = '';
-      if (isOutlier && c.pricePerSqft && outlierStats?.mean){
-        const pct = ((c.pricePerSqft - outlierStats.mean) / outlierStats.mean) * 100;
-        outlierTip = `$/SF is ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}% vs cluster mean of $${Math.round(outlierStats.mean)}. Verify the sale was arm's-length.`;
-      }
-      openDetailModal({
-        kind: 'comp',
-        rank: idx + 1,
-        address: c.address,
-        city: c.city, state: c.state, zip: c.zip,
-        lat: c.lat, lng: c.lng,
-        salePrice: c.salePrice,
-        ppsf: c.pricePerSqft,
-        sqft: c.sqft,
-        beds: c.beds, baths: c.baths,
-        year: c.yearBuilt,
-        lot: c.lot,
-        monthsAgo: c.monthsAgo,
-        distance: c.distance,
-        similarity: c.similarity,
-        isOutlier, outlierTip
-      });
+      openCompModalByIdx(idx);
     });
   });
 
   $('map-legend').hidden = false;
 }
+
+// Open the comp detail modal for a given index in scoredComps. Used by the table row click,
+// the marker popup "Open Street View" button, and anywhere else we want to launch the modal.
+function openCompModalByIdx(idx){
+  const c = scoredComps[idx];
+  if (!c) return;
+  if (c.lat == null){
+    // No coords — fall back to panning the main map
+    const m = mapMarkers[idx];
+    if (m){ m.openPopup(); mapInstance?.panTo(m.getLatLng()); }
+    return;
+  }
+  const isOutlier = outlierStats?.indices.has(idx);
+  let outlierTip = '';
+  if (isOutlier && c.pricePerSqft && outlierStats?.mean){
+    const pct = ((c.pricePerSqft - outlierStats.mean) / outlierStats.mean) * 100;
+    outlierTip = `$/SF is ${pct >= 0 ? '+' : ''}${pct.toFixed(0)}% vs cluster mean of $${Math.round(outlierStats.mean)}. Verify the sale was arm's-length.`;
+  }
+  openDetailModal({
+    kind: 'comp',
+    rank: idx + 1,
+    address: c.address,
+    city: c.city, state: c.state, zip: c.zip,
+    lat: c.lat, lng: c.lng,
+    salePrice: c.salePrice,
+    ppsf: c.pricePerSqft,
+    sqft: c.sqft,
+    beds: c.beds, baths: c.baths,
+    year: c.yearBuilt,
+    lot: c.lot,
+    monthsAgo: c.monthsAgo,
+    distance: c.distance,
+    similarity: c.similarity,
+    isOutlier, outlierTip
+  });
+}
+// Expose for the inline onclick in marker popups (Leaflet popups have static HTML, so the
+// simplest way to wire a button is via a window-scoped handler with the comp index).
+window._openCompModal = openCompModalByIdx;
 
 /* ============================================================
    EXPORT TO EXCEL
