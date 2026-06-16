@@ -824,6 +824,7 @@
     overflow-x:auto;
     overflow-y:hidden;
     position:relative;
+    cursor:grab;
     /* Vertical "more →" hint on the right edge — only visible when content overflows */
     background:
       linear-gradient(to right, var(--surface) 30%, transparent),
@@ -834,6 +835,14 @@
     background-size:40px 100%, 40px 100%, 14px 100%, 14px 100%;
     background-attachment:local, local, scroll, scroll;
     scroll-behavior:smooth;
+  }
+  .comps-table-wrap.grabbing{
+    cursor:grabbing !important;
+    scroll-behavior:auto;  /* disable smooth during active drag for responsive 1:1 feel */
+  }
+  .comps-table-wrap.grabbing *{
+    cursor:grabbing !important;
+    user-select:none;
   }
   .comps-table-wrap::-webkit-scrollbar{ height:10px }
   .comps-table-wrap::-webkit-scrollbar-track{
@@ -4348,6 +4357,62 @@ function bindEvents(){
 
   // Export
   $('export-btn').addEventListener('click', exportToExcel);
+
+  // Click-and-drag horizontal panning on the comps table.
+  // Mouse drag → pan the table left/right. Touch already gets native scroll, so this is mouse-only.
+  // Tracks how far the mouse moved between mousedown and mouseup; if movement exceeds a small
+  // threshold, the subsequent click is suppressed so a drag doesn't accidentally open the row modal.
+  enableDragScroll($('comps-table-wrap'));
+}
+
+function enableDragScroll(el){
+  if (!el) return;
+  let isDown = false;
+  let startX = 0;
+  let startScrollLeft = 0;
+  let movedX = 0;
+  const THRESHOLD = 4; // pixels — anything beyond this counts as a drag, not a click
+
+  el.addEventListener('mousedown', (e) => {
+    // Let interactive controls (checkboxes, links, buttons, the thumbnail image) handle their own clicks
+    if (e.target.closest('input, button, a, .addr-thumb, .ex-cb')) return;
+    if (e.button !== 0) return; // left button only
+    isDown = true;
+    movedX = 0;
+    startX = e.pageX;
+    startScrollLeft = el.scrollLeft;
+    el.classList.add('grabbing');
+  });
+
+  // Listen on document so a drag that exits the table boundary still works smoothly
+  document.addEventListener('mousemove', (e) => {
+    if (!isDown) return;
+    const dx = e.pageX - startX;
+    movedX = Math.abs(dx);
+    if (movedX > THRESHOLD){
+      e.preventDefault(); // suppress native text selection once we've definitively become a drag
+    }
+    el.scrollLeft = startScrollLeft - dx;
+  });
+
+  const endDrag = () => {
+    if (!isDown) return;
+    isDown = false;
+    el.classList.remove('grabbing');
+  };
+  document.addEventListener('mouseup', endDrag);
+  document.addEventListener('mouseleave', endDrag); // safety — if cursor leaves the window mid-drag
+
+  // Capture-phase click handler — if the user just dragged, kill the resulting click so we
+  // don't accidentally open the row modal at the end of a pan gesture.
+  el.addEventListener('click', (e) => {
+    if (movedX > THRESHOLD){
+      e.stopPropagation();
+      e.preventDefault();
+      // Reset on next tick so genuine subsequent clicks work
+      setTimeout(() => { movedX = 0; }, 0);
+    }
+  }, true);
 }
 
 /* ============================================================
