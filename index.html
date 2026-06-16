@@ -719,8 +719,18 @@
     padding:0;
     overflow:hidden;
   }
+  /* Override the close X for the comp modal so it visually aligns with the section
+     content right edge (28px from card edge), not just floating in the corner.
+     The header reserves padding-right to keep title/sub text from running underneath.
+     Stronger background opacity ensures the X stays visible over the Street View imagery. */
+  .comp-modal-card .modal-close{
+    top:20px;
+    right:28px;
+    background:rgba(10,15,28,0.85);
+    border-color:var(--border);
+  }
   #comp-modal-header{
-    padding:24px 28px 16px;
+    padding:24px 68px 18px 28px;
     position:relative;
   }
   .comp-modal-eyebrow{
