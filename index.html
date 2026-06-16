@@ -1155,16 +1155,30 @@
   .settings-toggle code{ font-size:10px;background:var(--surface-2);padding:1px 5px;border-radius:3px;color:var(--gold) }
   .modal-close{
     position:absolute;
-    top:14px;right:14px;
-    width:30px;height:30px;
+    top:16px;right:16px;
+    width:32px;height:32px;
     display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--border-soft);
     border-radius:6px;
     color:var(--text-muted);
-    font-size:22px;
+    background:rgba(10,15,28,0.6);
+    backdrop-filter:blur(4px);
+    -webkit-backdrop-filter:blur(4px);
+    font-size:18px;
+    font-weight:400;
     line-height:1;
+    cursor:pointer;
+    padding:0;
+    margin:0;
     transition:all .15s;
+    z-index:50;
+    font-family:inherit;
   }
-  .modal-close:hover{ background:var(--surface-2);color:var(--text) }
+  .modal-close:hover{
+    background:var(--surface-2);
+    color:var(--text);
+    border-color:var(--gold);
+  }
   .modal-hint{
     font-size:10px;
     color:var(--text-muted);
@@ -1263,17 +1277,25 @@
   .autofill-banner strong{ color:var(--text);font-weight:600 }
   .autofill-banner .af-dismiss{
     margin-left:auto;
-    color:var(--text);
+    align-self:center;
+    color:var(--text-muted);
     cursor:pointer;
-    padding:2px 8px;
+    width:24px;height:24px;
+    display:inline-flex;align-items:center;justify-content:center;
     flex-shrink:0;
-    border:1px solid var(--border);
+    border:1px solid var(--border-soft);
+    background:transparent;
     border-radius:4px;
-    font-size:14px;
+    font-size:15px;
     line-height:1;
+    padding:0;
     transition:all .15s;
   }
-  .autofill-banner .af-dismiss:hover{ background:var(--surface-2);border-color:var(--gold) }
+  .autofill-banner .af-dismiss:hover{
+    background:var(--surface-2);
+    border-color:var(--gold);
+    color:var(--text);
+  }
 
   /* A field that was autofilled — subtle gold underline-ish accent */
   .autofilled-field input,
@@ -4366,33 +4388,41 @@ function bindEvents(){
 }
 
 function enableDragScroll(el){
-  if (!el) return;
+  if (!el){
+    console.warn('[drag-scroll] target element not found');
+    return;
+  }
+  console.log('[drag-scroll] wired up on #' + (el.id || el.className));
   let isDown = false;
   let startX = 0;
   let startScrollLeft = 0;
-  let movedX = 0;
-  const THRESHOLD = 4; // pixels — anything beyond this counts as a drag, not a click
+  let dragDistance = 0;
+  const THRESHOLD = 5;
 
   el.addEventListener('mousedown', (e) => {
-    // Let interactive controls (checkboxes, links, buttons, the thumbnail image) handle their own clicks
-    if (e.target.closest('input, button, a, .addr-thumb, .ex-cb')) return;
-    if (e.button !== 0) return; // left button only
+    // Let interactive controls handle their own clicks — don't start a drag from them
+    if (e.target.closest('input, button, a, label, img, .addr-thumb, .ex-cb, .outlier-icon')) return;
+    if (e.button !== 0) return;
     isDown = true;
-    movedX = 0;
-    startX = e.pageX;
+    dragDistance = 0;
+    startX = e.clientX;
     startScrollLeft = el.scrollLeft;
     el.classList.add('grabbing');
+    // Don't preventDefault here — that would block focus/click downstream. Selection is cleared in mousemove instead.
   });
 
-  // Listen on document so a drag that exits the table boundary still works smoothly
-  document.addEventListener('mousemove', (e) => {
+  // Listen on window so a drag works even when cursor exits the table
+  window.addEventListener('mousemove', (e) => {
     if (!isDown) return;
-    const dx = e.pageX - startX;
-    movedX = Math.abs(dx);
-    if (movedX > THRESHOLD){
-      e.preventDefault(); // suppress native text selection once we've definitively become a drag
-    }
+    const dx = e.clientX - startX;
+    const absDx = Math.abs(dx);
+    if (absDx > dragDistance) dragDistance = absDx;
     el.scrollLeft = startScrollLeft - dx;
+    if (dragDistance > THRESHOLD){
+      // Once we've moved enough to be a drag, suppress text selection and any browser-default drag
+      e.preventDefault();
+      try { window.getSelection().removeAllRanges(); } catch(_){}
+    }
   });
 
   const endDrag = () => {
@@ -4400,17 +4430,16 @@ function enableDragScroll(el){
     isDown = false;
     el.classList.remove('grabbing');
   };
-  document.addEventListener('mouseup', endDrag);
-  document.addEventListener('mouseleave', endDrag); // safety — if cursor leaves the window mid-drag
+  window.addEventListener('mouseup', endDrag);
+  // Safety: if user dragged outside the browser window and released there
+  window.addEventListener('blur', endDrag);
 
-  // Capture-phase click handler — if the user just dragged, kill the resulting click so we
-  // don't accidentally open the row modal at the end of a pan gesture.
+  // Capture-phase click handler — kill any click event that came from a drag-release
   el.addEventListener('click', (e) => {
-    if (movedX > THRESHOLD){
+    if (dragDistance > THRESHOLD){
       e.stopPropagation();
       e.preventDefault();
-      // Reset on next tick so genuine subsequent clicks work
-      setTimeout(() => { movedX = 0; }, 0);
+      setTimeout(() => { dragDistance = 0; }, 0);
     }
   }, true);
 }
