@@ -6,6 +6,7 @@
 <meta name="darkreader-lock">
 <meta name="color-scheme" content="dark only">
 <title>Comp Finder & ARV Estimator</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'><g stroke='%23F5C76A' stroke-width='1' stroke-linecap='round' fill='none'><circle cx='12' cy='12' r='9.5'/><ellipse cx='12' cy='12' rx='9.5' ry='2.8'/><ellipse cx='12' cy='12' rx='3.5' ry='9.5'/><ellipse cx='12' cy='12' rx='7' ry='9.5' opacity='0.45'/></g><circle cx='8.5' cy='9' r='1' fill='%23F5C76A'/><circle cx='15' cy='14.5' r='0.8' fill='%23F5C76A' opacity='0.85'/></svg>">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1311,7 +1312,19 @@
   <canvas id="globe-canvas"></canvas>
   <div class="hero-content">
     <div class="brand">
-      <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="9" ry="3.5"/><path d="M12 3v18M3 12h18"/></svg></span>
+      <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none">
+        <g stroke="currentColor" stroke-width="1" stroke-linecap="round" fill="none">
+          <circle cx="12" cy="12" r="9.5"/>
+          <ellipse cx="12" cy="12" rx="9.5" ry="2.8"/>
+          <ellipse cx="12" cy="12" rx="3.5" ry="9.5"/>
+          <ellipse cx="12" cy="12" rx="7" ry="9.5" opacity="0.45"/>
+          <ellipse cx="12" cy="7.2" rx="7.7" ry="1.6" opacity="0.6"/>
+          <ellipse cx="12" cy="16.8" rx="7.7" ry="1.6" opacity="0.6"/>
+        </g>
+        <circle cx="8.5" cy="9" r="0.9" fill="#F5C76A"/>
+        <circle cx="15" cy="14.5" r="0.7" fill="#F5C76A" opacity="0.85"/>
+        <circle cx="11" cy="16.5" r="0.6" fill="#F5C76A" opacity="0.7"/>
+      </svg></span>
       <span class="brand-name">Comp Finder · ARV Estimator</span>
     </div>
     <div class="hero-settings-top">
@@ -1353,7 +1366,19 @@
 <div id="app" hidden>
   <header class="app-header">
     <div class="brand">
-      <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="9" ry="3.5"/><path d="M12 3v18M3 12h18"/></svg></span>
+      <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none">
+        <g stroke="currentColor" stroke-width="1" stroke-linecap="round" fill="none">
+          <circle cx="12" cy="12" r="9.5"/>
+          <ellipse cx="12" cy="12" rx="9.5" ry="2.8"/>
+          <ellipse cx="12" cy="12" rx="3.5" ry="9.5"/>
+          <ellipse cx="12" cy="12" rx="7" ry="9.5" opacity="0.45"/>
+          <ellipse cx="12" cy="7.2" rx="7.7" ry="1.6" opacity="0.6"/>
+          <ellipse cx="12" cy="16.8" rx="7.7" ry="1.6" opacity="0.6"/>
+        </g>
+        <circle cx="8.5" cy="9" r="0.9" fill="#F5C76A"/>
+        <circle cx="15" cy="14.5" r="0.7" fill="#F5C76A" opacity="0.85"/>
+        <circle cx="11" cy="16.5" r="0.6" fill="#F5C76A" opacity="0.7"/>
+      </svg></span>
       <span class="brand-name">Comp Finder</span>
     </div>
     <div class="header-right">
@@ -1673,11 +1698,38 @@ function loadGoogleMapsApi(key){
     const s = document.createElement('script');
     s.async = true;
     s.defer = true;
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&callback=${cbName}&libraries=streetView&v=weekly`;
+    // loading=async tells Google we're loading non-blocking; suppresses the perf warning
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&callback=${cbName}&libraries=streetView,geocoding&v=weekly&loading=async`;
     s.onerror = () => { reject(new Error('Failed to load Google Maps JS')); delete window[cbName]; };
     document.head.appendChild(s);
   });
   return _gmapsLoadPromise;
+}
+
+// Geocode a single address via the Maps JS Geocoder. Caches results in localStorage so we don't
+// burn requests on the same address twice. Returns {lat, lng} or null on failure.
+async function geocodeViaGoogle(address, maps){
+  if (!address) return null;
+  const cacheKey = 'geocode:' + address.toLowerCase().trim();
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) return JSON.parse(cached);
+  } catch(e){}
+  return new Promise(resolve => {
+    const geocoder = new maps.Geocoder();
+    geocoder.geocode({ address }, (results, status) => {
+      if (status === 'OK' && results && results[0]){
+        const loc = results[0].geometry.location;
+        // Prefer ROOFTOP-precision matches, else street-level is still good
+        const coords = { lat: loc.lat(), lng: loc.lng(), precision: results[0].geometry.location_type };
+        try { localStorage.setItem(cacheKey, JSON.stringify(coords)); } catch(e){}
+        resolve(coords);
+      } else {
+        console.warn('[geocode]', status, address);
+        resolve(null);
+      }
+    });
+  });
 }
 
 // Google calls this if the JS API key is invalid, billing isn't enabled, the API isn't enabled,
@@ -3427,32 +3479,40 @@ const DEMO_COMPS_RAW = [
   ['698 NW 12th Rd, Boca Raton, FL 33486',       899000, 2250, 4, 3, 2004, 0.28,  6, 71],
 ];
 
-function buildDemoComps(){
+function buildDemoComps(realCoords, subjCoords){
+  const subjLat = (subjCoords && subjCoords.lat) || DEMO_SUBJECT.lat;
+  const subjLng = (subjCoords && subjCoords.lng) || DEMO_SUBJECT.lng;
   return DEMO_COMPS_RAW.map((row, idx) => {
     const [address, salePrice, sqft, beds, baths, yearBuilt, distance, monthsAgo, similarity] = row;
-    // Place each comp in the correct quadrant from the subject based on the address direction.
-    // NW addresses land north-west of the subject, SW south-west, etc. Within a quadrant we
-    // vary the bearing slightly so dots don't all stack on top of each other.
-    const upperAddr = address.toUpperCase();
-    let bearing; // degrees: 0=N, 90=E, 180=S, 270=W
-    const isAvenue = /\bAVE\b/i.test(address);
-    if (upperAddr.includes(' NW ')){
-      // Avenues run N-S so most of the offset is WEST; Streets/Drives are E-W so most is NORTH
-      bearing = isAvenue ? (255 + (idx * 7) % 30) : (310 + (idx * 5) % 35);
-    } else if (upperAddr.includes(' SW ')){
-      bearing = isAvenue ? (240 - (idx * 7) % 25) : (210 + (idx * 5) % 30);
-    } else if (upperAddr.includes(' NE ')){
-      bearing = isAvenue ? (85 - (idx * 7) % 25) : (40 + (idx * 5) % 30);
-    } else if (upperAddr.includes(' SE ')){
-      bearing = isAvenue ? (110 + (idx * 7) % 25) : (140 + (idx * 5) % 30);
+
+    let lat, lng;
+    if (realCoords && realCoords[address]){
+      // Use real geocoded coords when we have them
+      lat = realCoords[address].lat;
+      lng = realCoords[address].lng;
     } else {
-      // Named streets (Aurelia, St Albans, Palmetto Park) — golden-angle fallback
-      bearing = (idx * 137.5) % 360;
+      // Fallback: quadrant-based estimate from address direction
+      const upperAddr = address.toUpperCase();
+      let bearing;
+      const isAvenue = /\bAVE\b/i.test(address);
+      if (upperAddr.includes(' NW ')){
+        bearing = isAvenue ? (255 + (idx * 7) % 30) : (310 + (idx * 5) % 35);
+      } else if (upperAddr.includes(' SW ')){
+        bearing = isAvenue ? (240 - (idx * 7) % 25) : (210 + (idx * 5) % 30);
+      } else if (upperAddr.includes(' NE ')){
+        bearing = isAvenue ? (85 - (idx * 7) % 25) : (40 + (idx * 5) % 30);
+      } else if (upperAddr.includes(' SE ')){
+        bearing = isAvenue ? (110 + (idx * 7) % 25) : (140 + (idx * 5) % 30);
+      } else {
+        bearing = (idx * 137.5) % 360;
+      }
+      const rad = bearing * Math.PI / 180;
+      const latDeg = (distance * Math.cos(rad)) / 69;
+      const lngDeg = (distance * Math.sin(rad)) / 62;
+      lat = subjLat + latDeg;
+      lng = subjLng + lngDeg;
     }
-    const rad = bearing * Math.PI / 180;
-    // Use cos for lat (north positive) and sin for lng with WEST/EAST sign baked in via bearing
-    const latDeg = (distance * Math.cos(rad)) / 69;
-    const lngDeg = (distance * Math.sin(rad)) / 62; // ~62 mi per deg lng at lat 26
+
     // Parse city/state/zip
     const m = address.match(/,\s*([^,]+),\s*([A-Z]{2})\s*(\d{5})$/);
     return {
@@ -3460,8 +3520,7 @@ function buildDemoComps(){
       city: m ? m[1].trim() : '',
       state: m ? m[2] : '',
       zip: m ? m[3] : '',
-      lat: DEMO_SUBJECT.lat + latDeg,
-      lng: DEMO_SUBJECT.lng + lngDeg,
+      lat, lng,
       salePrice,
       saleDate: new Date(Date.now() - monthsAgo * 30.44 * 86400 * 1000).toISOString().slice(0, 10),
       monthsAgo,
@@ -3482,16 +3541,42 @@ function buildDemoComps(){
 }
 
 async function loadDemo(){
-  // Don't fire any API calls — preload everything
-  $('hero-address').value = DEMO_SUBJECT.address;
-  subjectLocation = { lat: DEMO_SUBJECT.lat, lng: DEMO_SUBJECT.lng, address: DEMO_SUBJECT.address };
+  // If Google Maps key works, geocode subject + all 25 comps in parallel for real coords.
+  // Results are cached in localStorage so subsequent loads are instant.
+  let realSubjectCoords = null;
+  let realCompCoords = null;
 
-  Globe.zoomToLocation(DEMO_SUBJECT.lat, DEMO_SUBJECT.lng, () => {
-    transitionToApp(DEMO_SUBJECT.lat, DEMO_SUBJECT.lng, DEMO_SUBJECT.address, { skipAutofill: true });
+  if (GMAPS_KEY && !GMAPS_KEY_FAILED){
+    showToast('Geocoding demo addresses via Google…', 2500);
+    try {
+      const maps = await loadGoogleMapsApi(GMAPS_KEY);
+      // Kick all 26 geocodes off in parallel (Google's API allows 50 QPS — 26 is well below)
+      const subjP = geocodeViaGoogle(DEMO_SUBJECT.address, maps);
+      const compPs = DEMO_COMPS_RAW.map(row => geocodeViaGoogle(row[0], maps));
+      const [subjResult, ...compResults] = await Promise.all([subjP, ...compPs]);
+      if (subjResult) realSubjectCoords = subjResult;
+      realCompCoords = {};
+      DEMO_COMPS_RAW.forEach((row, i) => {
+        if (compResults[i]) realCompCoords[row[0]] = compResults[i];
+      });
+      const hits = compResults.filter(Boolean).length;
+      console.log(`[demo] Geocoded ${hits}/${DEMO_COMPS_RAW.length} comps + subject:${!!subjResult}`);
+    } catch(e){
+      console.warn('[demo] Geocoding failed, falling back to estimates:', e);
+    }
+  }
+
+  const subjLat = realSubjectCoords?.lat ?? DEMO_SUBJECT.lat;
+  const subjLng = realSubjectCoords?.lng ?? DEMO_SUBJECT.lng;
+
+  $('hero-address').value = DEMO_SUBJECT.address;
+  subjectLocation = { lat: subjLat, lng: subjLng, address: DEMO_SUBJECT.address };
+
+  Globe.zoomToLocation(subjLat, subjLng, () => {
+    transitionToApp(subjLat, subjLng, DEMO_SUBJECT.address, { skipAutofill: true });
 
     // Wait for the app view to render, then populate subject form + comps
     setTimeout(() => {
-      // Populate subject form (mark fields as autofilled for visual continuity)
       const setField = (id, val, ff) => {
         const el = $(id);
         if (!el) return;
@@ -3510,18 +3595,19 @@ async function loadDemo(){
       $('ff_waterfront')?.classList.add('verify');
       $('s_density').value = DEMO_SUBJECT.density;
 
-      // Set subject data + comps + ranking state
       subjectData = readSubject();
-      rawComps = buildDemoComps();
+      rawComps = buildDemoComps(realCompCoords, { lat: subjLat, lng: subjLng });
       lastSearchTier = { tier: 'demo', label: '2 mi · 18 mo (demo)', radius: 2, daysOld: 545, qualifying: rawComps.length, reason: null };
 
-      // Banner
       const banner = $('autofill-banner');
       banner.hidden = false;
       banner.classList.remove('error');
+      const geocodedNote = realCompCoords
+        ? '<strong>Real geocoded coordinates</strong> via Google.'
+        : '<strong>Demo with estimated coordinates</strong> (no Google key set).';
       banner.innerHTML = `
         <span class="af-icon">▶</span>
-        <span><strong>Demo loaded — no API calls used.</strong> Click any comp row to see the satellite view and open it on Zillow. Edit subject specs to re-rank instantly.</span>
+        <span><strong>Demo loaded — no Rentcast calls used.</strong> ${geocodedNote} Click any comp row for Street View + Zillow. Edit subject specs to re-rank instantly.</span>
         <span class="af-dismiss" onclick="this.parentElement.hidden = true">×</span>
       `;
 
