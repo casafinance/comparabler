@@ -2146,6 +2146,15 @@ const Globe = (function(){
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(w, h);
     renderer.setClearColor(0x000000, 0);
+    // Modern color pipeline — makes the texture colors render with proper saturation/brightness.
+    // Cover both old (r128) and new (r152+) API names so this works regardless of which Three.js
+    // version is loaded by the script tag.
+    if ('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace || 'srgb';
+    else if ('outputEncoding' in renderer) renderer.outputEncoding = THREE.sRGBEncoding || 3001;
+    if (THREE.ACESFilmicToneMapping) {
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.25; // slightly hot — punchy & bright
+    }
 
     // Starfield background
     const starGeo = new THREE.BufferGeometry();
@@ -2171,13 +2180,13 @@ const Globe = (function(){
     const stars = new THREE.Points(starGeo, starMat);
     scene.add(stars);
 
-    // Main sphere — starts dark, gets textured if texture loads
-    const geo = new THREE.SphereGeometry(1, 64, 64);
+    // Main sphere — higher poly count for smooth silhouette + crisp texture mapping at the limb
+    const geo = new THREE.SphereGeometry(1, 128, 128);
     const mat = new THREE.MeshPhongMaterial({
-      color: 0x152038,
-      emissive: 0x0E1828,
-      shininess: 12,
-      specular: 0x2A3A60
+      color: 0x1A2540,
+      emissive: 0x121C2E,
+      shininess: 18,
+      specular: 0x3A4C78
     });
     sphere = new THREE.Mesh(geo, mat);
     scene.add(sphere);
@@ -2220,9 +2229,28 @@ const Globe = (function(){
           if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace || 'srgb';
           else if ('encoding' in tex) tex.encoding = THREE.sRGBEncoding || 3001;
           mat.map = tex;
-          mat.color.setHex(0x9CB0D8); // brighter so texture is visible
-          mat.emissive.setHex(0x0A1020);
+          // White color tint means the texture renders at its FULL brightness — no blue-grey wash
+          mat.color.setHex(0xFFFFFF);
+          mat.emissive.setHex(0x1A2440); // slight self-illumination so the night side isn't pitch black
+          mat.emissiveIntensity = 0.4;
           mat.needsUpdate = true;
+
+          // Try to add a bump map (topology) for visible terrain relief — makes mountains/coastlines
+          // pop without needing a higher-res color texture. Optional; failure is silent.
+          const bumpLoader = new THREE.TextureLoader();
+          bumpLoader.crossOrigin = 'anonymous';
+          bumpLoader.load(
+            'https://unpkg.com/three-globe@2.32.0/example/img/earth-topology.png',
+            (bump) => {
+              bump.anisotropy = maxAniso;
+              mat.bumpMap = bump;
+              mat.bumpScale = 0.018;
+              mat.needsUpdate = true;
+              console.log('[globe] Bump map loaded');
+            },
+            undefined,
+            () => { /* no bump — that's OK */ }
+          );
         },
         undefined,
         (err) => {
@@ -2234,13 +2262,20 @@ const Globe = (function(){
     };
     tryTexture();
 
-    // Lighting — brighter overall
-    const ambient = new THREE.AmbientLight(0x4A5878, 0.85);
+    // Lighting — brighter, with a hemisphere light for nice sky/ground ambient gradient
+    const ambient = new THREE.AmbientLight(0x6878A0, 1.0);
     scene.add(ambient);
-    const dir = new THREE.DirectionalLight(0xFFE4B3, 1.0);
+    // Hemisphere light: blue sky tint on top, warmer earth tint on bottom — adds natural feel
+    if (THREE.HemisphereLight){
+      const hemi = new THREE.HemisphereLight(0xB8D4FF, 0x4A3520, 0.55);
+      scene.add(hemi);
+    }
+    // Key light — warm sun coming from above-right
+    const dir = new THREE.DirectionalLight(0xFFE8C0, 1.6);
     dir.position.set(3, 2, 4);
     scene.add(dir);
-    const dir2 = new THREE.DirectionalLight(0x88A8D0, 0.5);
+    // Cool fill from behind-left to keep dark side visible
+    const dir2 = new THREE.DirectionalLight(0x9CB8DC, 0.7);
     dir2.position.set(-3, -1, -2);
     scene.add(dir2);
 
